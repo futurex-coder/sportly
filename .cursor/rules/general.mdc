@@ -1,0 +1,13 @@
+---
+alwaysApply: true
+---
+
+Always refrence blueprint and implementaion guide in docs folder.
+
+Blueprint - docs\SPORTLY-BLUEPRINT.md
+Guide - docs\SPORTLY-IMPLEMENTATION-GUIDE.md
+
+Always refrence  schema.ts and queries.ts guide in docs folder.
+
+Schema - lib\db\schema.ts
+Queries - lib\db\queries.ts
