@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
+import { supabaseAdmin } from '@/lib/supabase/admin';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -25,12 +26,14 @@ export default async function LandingPage() {
     { data: newClubs },
     { data: recentPlayers },
   ] = await Promise.all([
-    supabase
+    supabaseAdmin
       .from('profiles')
-      .select('id', { count: 'exact', head: true }),
-    supabase
+      .select('*', { count: 'exact', head: true })
+      .eq('role', 'client'),
+    supabaseAdmin
       .from('bookings')
-      .select('id', { count: 'exact', head: true }),
+      .select('*', { count: 'exact', head: true })
+      .in('status', ['confirmed', 'completed']),
     supabase
       .from('sport_categories')
       .select('id, name, slug, icon, color_primary, color_accent')

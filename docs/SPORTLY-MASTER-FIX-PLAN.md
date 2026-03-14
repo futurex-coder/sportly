@@ -292,7 +292,7 @@ In the slot generation algorithm, after getting the location schedule and before
 
 ---
 
-### 2.3 — Redirect When No Slots Available
+### 2.3 — Redirect When No Slots Available - DONE
 
 **ID:** 17 · **Severity:** Medium · 🖥️ CODE
 
