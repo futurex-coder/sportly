@@ -25,6 +25,7 @@ export interface TimeSlot {
   priceEur: number | null;
   priceLocal: number | null;
   bookingId?: string;
+  blockReason?: string;
   sessions: SlotSession[];
 }
 
@@ -91,15 +92,18 @@ interface TimeRange {
   start: number; // minutes
   end: number;
   isAvailable: boolean;
+  reason?: string;
+  fromOverride: boolean;
 }
 
 function buildAvailableRanges(
   openMin: number,
   closeMin: number,
-  overrides: { start: number; end: number; isAvailable: boolean }[]
+  overrides: { start: number; end: number; isAvailable: boolean; reason?: string }[],
+  defaultAvailable: boolean = true
 ): TimeRange[] {
   if (overrides.length === 0) {
-    return [{ start: openMin, end: closeMin, isAvailable: true }];
+    return [{ start: openMin, end: closeMin, isAvailable: defaultAvailable, fromOverride: false }];
   }
 
   const sorted = [...overrides].sort((a, b) => a.start - b.start);
@@ -112,26 +116,30 @@ function buildAvailableRanges(
     if (ovrStart >= ovrEnd) continue;
 
     if (cursor < ovrStart) {
-      ranges.push({ start: cursor, end: ovrStart, isAvailable: true });
+      ranges.push({ start: cursor, end: ovrStart, isAvailable: defaultAvailable, fromOverride: false });
     }
-    ranges.push({ start: ovrStart, end: ovrEnd, isAvailable: ovr.isAvailable });
+    ranges.push({ start: ovrStart, end: ovrEnd, isAvailable: ovr.isAvailable, reason: ovr.reason, fromOverride: true });
     cursor = Math.max(cursor, ovrEnd);
   }
 
   if (cursor < closeMin) {
-    ranges.push({ start: cursor, end: closeMin, isAvailable: true });
+    ranges.push({ start: cursor, end: closeMin, isAvailable: defaultAvailable, fromOverride: false });
   }
 
   return ranges;
 }
 
-function isMinuteInAvailableRange(minute: number, slotEnd: number, ranges: TimeRange[]): boolean {
+function getSlotRangeInfo(
+  minute: number,
+  slotEnd: number,
+  ranges: TimeRange[]
+): { isAvailable: boolean; reason?: string; fromOverride: boolean } {
   for (const r of ranges) {
     if (minute >= r.start && slotEnd <= r.end) {
-      return r.isAvailable;
+      return { isAvailable: r.isAvailable, reason: r.reason, fromOverride: r.fromOverride };
     }
   }
-  return false;
+  return { isAvailable: false, fromOverride: false };
 }
 
 // ─── Main algorithm ─────────────────────────────────
@@ -180,10 +188,7 @@ export async function getAvailableSlots(
     .eq('day_of_week', dayOfWeek)
     .single();
 
-  if (locSched?.is_closed) {
-    return buildClosedSlots(locSched.open_time ?? '08:00', locSched.close_time ?? '22:00', 60);
-  }
-
+  const locationClosed = locSched?.is_closed ?? false;
   const baseOpen = locSched?.open_time ?? '08:00';
   const baseClose = locSched?.close_time ?? '22:00';
 
@@ -211,10 +216,11 @@ export async function getAvailableSlots(
   const nowMin = getNowMinutes();
   const earliestSlotMin = isTodayDate ? nowMin + minNoticeHours * 60 : 0;
 
-  // ── 4. Get field availability overrides ──
+  // ── 4. Get field availability overrides (BEFORE location-closed check) ──
+  // Query both specific-date and day-of-week overrides; include reason column.
   const { data: fieldAvail } = await supabaseAdmin
     .from('field_availability')
-    .select('day_of_week, specific_date, start_time, end_time, is_available')
+    .select('day_of_week, specific_date, start_time, end_time, is_available, reason')
     .eq('field_id', fieldId)
     .or(`day_of_week.eq.${dayOfWeek},specific_date.eq.${date}`);
 
@@ -223,13 +229,17 @@ export async function getAvailableSlots(
     (a) => a.day_of_week === dayOfWeek && !a.specific_date
   );
 
+  // Date-specific overrides take full precedence over weekly rules
   const applicableOverrides = dateSpecific.length > 0 ? dateSpecific : weeklyRules;
 
-  if (
-    applicableOverrides.length > 0 &&
-    applicableOverrides.every((a) => !a.is_available)
-  ) {
-    return buildClosedSlots(baseOpen, baseClose, slotDuration);
+  // ── 4a. Handle location-closed case ──
+  // If location is closed, field-level is_available=true overrides can still
+  // open specific time ranges. If no such overrides exist, return all closed.
+  if (locationClosed) {
+    const hasAvailableOverride = applicableOverrides.some((a) => a.is_available);
+    if (!hasAvailableOverride) {
+      return buildClosedSlots(baseOpen, baseClose, slotDuration);
+    }
   }
 
   const openMin = timeToMinutes(baseOpen);
@@ -239,9 +249,15 @@ export async function getAvailableSlots(
     start: timeToMinutes(a.start_time),
     end: timeToMinutes(a.end_time),
     isAvailable: a.is_available ?? true,
+    reason: a.reason ?? undefined,
   }));
 
-  const availRanges = buildAvailableRanges(openMin, closeMin, overrideRanges);
+  // When location is closed, default is unavailable — only explicit
+  // is_available=true overrides open time windows.
+  // When location is open, default is available — is_available=false
+  // overrides block specific ranges.
+  const defaultAvailable = !locationClosed;
+  const availRanges = buildAvailableRanges(openMin, closeMin, overrideRanges, defaultAvailable);
 
   // ── 5. Generate slot grid ──
   const step = slotDuration + buffer;
@@ -252,10 +268,21 @@ export async function getAvailableSlots(
     const startTime = minutesToTime(m);
     const endTime = minutesToTime(slotEnd);
 
-    const inRange = isMinuteInAvailableRange(m, slotEnd, availRanges);
+    const rangeInfo = getSlotRangeInfo(m, slotEnd, availRanges);
 
-    if (!inRange) {
-      slots.push({ startTime, endTime, status: 'blocked', priceEur: null, priceLocal: null, sessions: [] });
+    if (!rangeInfo.isAvailable) {
+      // Explicit field override → 'blocked' (with optional reason).
+      // Location-closed default gap → 'closed'.
+      const status = rangeInfo.fromOverride ? 'blocked' : (locationClosed ? 'closed' : 'blocked');
+      slots.push({
+        startTime,
+        endTime,
+        status,
+        priceEur: null,
+        priceLocal: null,
+        blockReason: rangeInfo.reason,
+        sessions: [],
+      });
       continue;
     }
 

@@ -238,7 +238,7 @@ CREATE TRIGGER on_booking_cancel_draft_sessions
 
 ---
 
-### 2.1 — All Slots Shown as Available / Booked Slots Not Blocked
+### 2.1 — All Slots Shown as Available / Booked Slots Not Blocked - DONE
 
 **ID:** 4, 5 · **Severity:** CRITICAL · 🖥️ CODE
 

@@ -100,10 +100,20 @@ export default function SlotCell({ slot, durationMinutes, onClick }: SlotCellPro
   }
 
   if (slot.status === 'blocked') {
+    const label = slot.blockReason || 'Blocked';
     return (
-      <div className={`${base} ${STATUS_CLASSES.blocked}`}>
-        <span className="text-[11px]">Blocked</span>
-      </div>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div className={`${base} ${STATUS_CLASSES.blocked}`}>
+            <span className="text-[11px] truncate max-w-full">{label}</span>
+          </div>
+        </TooltipTrigger>
+        <TooltipContent side="top">
+          <p className="text-xs">
+            {slot.startTime} – {slot.endTime} &middot; {label}
+          </p>
+        </TooltipContent>
+      </Tooltip>
     );
   }
 
