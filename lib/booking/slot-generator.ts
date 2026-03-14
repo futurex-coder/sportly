@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
+import { supabaseAdmin } from '@/lib/supabase/admin';
 
 // ─── Types ──────────────────────────────────────────
 
@@ -154,10 +155,13 @@ export async function getAvailableSlots(
   fieldId: string,
   date: string
 ): Promise<TimeSlot[]> {
-  const supabase = await createClient();
+  // All queries use supabaseAdmin (service role) to bypass RLS.
+  // The regular server client is subject to RLS, which means logged-out users
+  // see zero bookings and logged-in users only see their own — causing every
+  // slot to appear "available". Slot availability must reflect ALL bookings.
 
   // ── 0. Get field + location ──
-  const { data: field } = await supabase
+  const { data: field } = await supabaseAdmin
     .from('fields')
     .select('id, location_id, is_active')
     .eq('id', fieldId)
@@ -169,7 +173,7 @@ export async function getAvailableSlots(
   const dayOfWeek = getDayOfWeek(date);
 
   // ── 1. Get location schedule for this weekday ──
-  const { data: locSched } = await supabase
+  const { data: locSched } = await supabaseAdmin
     .from('location_schedules')
     .select('open_time, close_time, is_closed')
     .eq('location_id', field.location_id)
@@ -184,7 +188,7 @@ export async function getAvailableSlots(
   const baseClose = locSched?.close_time ?? '22:00';
 
   // ── 2. Get field booking settings ──
-  const { data: settings } = await supabase
+  const { data: settings } = await supabaseAdmin
     .from('field_booking_settings')
     .select('*')
     .eq('field_id', fieldId)
@@ -208,7 +212,7 @@ export async function getAvailableSlots(
   const earliestSlotMin = isTodayDate ? nowMin + minNoticeHours * 60 : 0;
 
   // ── 4. Get field availability overrides ──
-  const { data: fieldAvail } = await supabase
+  const { data: fieldAvail } = await supabaseAdmin
     .from('field_availability')
     .select('day_of_week, specific_date, start_time, end_time, is_available')
     .eq('field_id', fieldId)
@@ -219,10 +223,8 @@ export async function getAvailableSlots(
     (a) => a.day_of_week === dayOfWeek && !a.specific_date
   );
 
-  // Date-specific overrides take precedence over weekly rules
   const applicableOverrides = dateSpecific.length > 0 ? dateSpecific : weeklyRules;
 
-  // Check if all overrides mark the day as unavailable
   if (
     applicableOverrides.length > 0 &&
     applicableOverrides.every((a) => !a.is_available)
@@ -267,13 +269,15 @@ export async function getAvailableSlots(
     });
   }
 
-  // ── 6. Fetch confirmed bookings -> mark overlapping slots as booked ──
-  const { data: existingBookings } = await supabase
+  // ── 6. Fetch ALL non-cancelled bookings -> mark overlapping slots as booked ──
+  // Uses .neq('status', 'cancelled') so pending, confirmed, and completed
+  // bookings all block their slots.
+  const { data: existingBookings } = await supabaseAdmin
     .from('bookings')
-    .select('id, start_time, end_time')
+    .select('id, start_time, end_time, status')
     .eq('field_id', fieldId)
     .eq('date', date)
-    .eq('status', 'confirmed');
+    .neq('status', 'cancelled');
 
   const bookedMap = new Map<string, string>();
   (existingBookings ?? []).forEach((b) => {
@@ -306,8 +310,8 @@ export async function getAvailableSlots(
     }
   }
 
-  // ── 8. Fetch public group sessions → attach to overlapping slots ──
-  const { data: publicSessions } = await supabase
+  // ── 8. Fetch public group sessions (draft + active) → attach to overlapping slots ──
+  const { data: publicSessions } = await supabaseAdmin
     .from('group_sessions')
     .select(`
       id, title, visibility, is_confirmed, date, start_time, end_time,
