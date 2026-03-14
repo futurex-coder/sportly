@@ -572,7 +572,7 @@ Rankings page shows "Based on 2 ratings from 0 sessions" — contradictory.
 
 ---
 
-### 4.3 — Organizer Can Leave Their Own Session
+### 4.3 — Organizer Can Leave Their Own Session - DONE
 
 **ID:** Q · **Severity:** Medium · 🖥️ CODE
 
