@@ -1,12 +1,22 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
+import { supabaseAdmin } from '@/lib/supabase/admin';
 import {
   getAvailableSlots,
   getFieldBookingInfo,
   type TimeSlot,
   type FieldBookingInfo,
 } from '@/lib/booking/slot-generator';
+
+function addDaysStr(dateStr: string, days: number): string {
+  const d = new Date(dateStr + 'T12:00:00');
+  d.setDate(d.getDate() + days);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
+}
 
 export interface FieldSchedule {
   field: {
@@ -89,4 +99,42 @@ export async function getScheduleForDate(
   );
 
   return results;
+}
+
+/**
+ * Search forward from afterDate to find the next date with at least one
+ * available slot across any field at this location. Returns the date and
+ * its full schedule so the caller can render immediately without re-fetching.
+ */
+export async function findNextAvailableDate(
+  locationId: string,
+  afterDate: string,
+  maxDays: number = 30
+): Promise<{ date: string; schedule: FieldSchedule[] } | null> {
+  const { data: fields } = await supabaseAdmin
+    .from('fields')
+    .select('id')
+    .eq('location_id', locationId)
+    .eq('is_active', true);
+
+  if (!fields || fields.length === 0) return null;
+
+  for (let i = 1; i <= maxDays; i++) {
+    const dateStr = addDaysStr(afterDate, i);
+
+    const slotResults = await Promise.all(
+      fields.map((f) => getAvailableSlots(f.id, dateStr))
+    );
+
+    const hasAvailable = slotResults.some((slots) =>
+      slots.some((s) => s.status === 'available')
+    );
+
+    if (hasAvailable) {
+      const schedule = await getScheduleForDate(locationId, dateStr);
+      return { date: dateStr, schedule };
+    }
+  }
+
+  return null;
 }

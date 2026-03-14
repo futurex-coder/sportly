@@ -266,7 +266,7 @@ In lib/booking/slot-generator.ts (or wherever getAvailableSlots / getScheduleFor
 
 ---
 
-### 2.2 — `field_availability` Overrides Never Queried
+### 2.2 — `field_availability` Overrides Never Queried - DONE
 
 **ID:** Gap-4 · **Severity:** High · 🖥️ CODE
 
