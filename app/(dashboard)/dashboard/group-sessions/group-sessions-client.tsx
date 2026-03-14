@@ -65,6 +65,7 @@ interface SessionRow {
   is_cancelled: boolean | null;
   cancelled_reason: string | null;
   completed_at: string | null;
+  confirmation_deadline: string | null;
   organizer_id: string;
   profiles: { full_name: string | null; email: string; avatar_url: string | null } | null;
   sport_categories: { id: string; name: string; icon: string } | null;

@@ -12,6 +12,7 @@ interface SessionWithLifecycle extends SessionCardData {
   is_confirmed?: boolean | null;
   is_cancelled?: boolean | null;
   cancelled_reason?: string | null;
+  confirmation_deadline?: string | null;
 }
 
 interface Participation {
@@ -36,15 +37,30 @@ export default function MySessionsClient({
 }: Props) {
   const fullyRatedSet = new Set(fullyRatedSessionIds);
 
-  const upcomingOrg = organized.filter((s) => s.date >= today && !s.is_cancelled);
-  const pastOrg = organized.filter((s) => s.date < today || s.is_cancelled);
+  function isExpiredDraft(s: SessionWithLifecycle): boolean {
+    return (
+      !s.is_confirmed &&
+      !s.is_cancelled &&
+      !!s.confirmation_deadline &&
+      new Date(s.confirmation_deadline) < new Date()
+    );
+  }
 
-  const upcomingPart = participations.filter(
-    (p) => (p.group_sessions as any)?.date >= today && p.status !== 'invited' && p.status !== 'requested'
+  const upcomingOrg = organized.filter(
+    (s) => s.date >= today && !s.is_cancelled && !isExpiredDraft(s)
   );
-  const pastPart = participations.filter(
-    (p) => (p.group_sessions as any)?.date < today && p.status !== 'invited' && p.status !== 'requested'
+  const pastOrg = organized.filter(
+    (s) => s.date < today || s.is_cancelled || isExpiredDraft(s)
   );
+
+  const upcomingPart = participations.filter((p) => {
+    const sess = p.group_sessions as SessionWithLifecycle;
+    return sess?.date >= today && p.status !== 'invited' && p.status !== 'requested' && !isExpiredDraft(sess);
+  });
+  const pastPart = participations.filter((p) => {
+    const sess = p.group_sessions as SessionWithLifecycle;
+    return (sess?.date < today || isExpiredDraft(sess)) && p.status !== 'invited' && p.status !== 'requested';
+  });
 
   const invites = participations.filter((p) => p.status === 'invited');
   const requested = participations.filter((p) => p.status === 'requested');

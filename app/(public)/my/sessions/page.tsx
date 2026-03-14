@@ -13,7 +13,7 @@ export default async function MySessionsPage() {
     .from('group_sessions')
     .select(
       `id, title, date, start_time, end_time, visibility, max_participants, current_participants,
-       is_confirmed, is_cancelled, cancelled_reason, completed_at,
+       is_confirmed, is_cancelled, cancelled_reason, completed_at, confirmation_deadline,
        fields!inner(name, locations!inner(name, city, clubs!inner(name, slug))),
        sport_categories(name, icon)`
     )
@@ -27,7 +27,7 @@ export default async function MySessionsPage() {
     .select(
       `id, status, session_id,
        group_sessions!inner(id, title, date, start_time, end_time, organizer_id, visibility, max_participants, current_participants,
-         is_confirmed, is_cancelled, cancelled_reason, completed_at,
+         is_confirmed, is_cancelled, cancelled_reason, completed_at, confirmation_deadline,
          fields!inner(name, locations!inner(name, city, clubs!inner(name, slug))),
          sport_categories(name, icon))`
     )

@@ -49,7 +49,8 @@ export default function RankingCard({ data }: RankingCardProps) {
       {/* Stats */}
       <p className="text-muted-foreground mb-3 text-sm">
         Based on {totalRatingsReceived} rating{totalRatingsReceived !== 1 ? 's' : ''} from{' '}
-        {totalSessionsPlayed} session{totalSessionsPlayed !== 1 ? 's' : ''}
+        {Math.max(totalSessionsPlayed, totalRatingsReceived > 0 ? 1 : 0)} session
+        {Math.max(totalSessionsPlayed, totalRatingsReceived > 0 ? 1 : 0) !== 1 ? 's' : ''}
       </p>
 
       {/* Criteria breakdown */}

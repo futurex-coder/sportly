@@ -49,7 +49,7 @@ export default async function DashboardGroupSessionsPage() {
         `id, title, field_id, date, start_time, end_time, visibility,
          max_participants, current_participants,
          is_confirmed, is_cancelled, cancelled_reason, completed_at,
-         organizer_id,
+         confirmation_deadline, organizer_id,
          profiles!group_sessions_organizer_id_fkey(full_name, email, avatar_url),
          sport_categories(id, name, icon)`
       )

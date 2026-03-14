@@ -337,7 +337,8 @@ export async function getAvailableSlots(
     }
   }
 
-  // ── 8. Fetch public group sessions (draft + active) → attach to overlapping slots ──
+  // ── 8. Fetch public group sessions (active + non-expired drafts) → attach to overlapping slots ──
+  const nowIso = new Date().toISOString();
   const { data: publicSessions } = await supabaseAdmin
     .from('group_sessions')
     .select(`
@@ -350,7 +351,8 @@ export async function getAvailableSlots(
     .eq('field_id', fieldId)
     .eq('date', date)
     .eq('is_cancelled', false)
-    .eq('visibility', 'public');
+    .eq('visibility', 'public')
+    .or(`is_confirmed.eq.true,confirmation_deadline.is.null,confirmation_deadline.gt.${nowIso}`);
 
   if (publicSessions && publicSessions.length > 0) {
     for (const gs of publicSessions) {

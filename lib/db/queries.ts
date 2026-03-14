@@ -38,16 +38,21 @@ export function getSessionStatus(session: {
   completedAt?: string | Date | null;
   is_confirmed?: boolean | null;
   isConfirmed?: boolean | null;
+  confirmation_deadline?: string | Date | null;
+  confirmationDeadline?: string | Date | null;
 }): SessionStatus {
   const isCancelled = session.is_cancelled ?? session.isCancelled ?? false;
   const cancelledReason = session.cancelled_reason ?? session.cancelledReason ?? null;
   const completedAt = session.completed_at ?? session.completedAt ?? null;
   const isConfirmed = session.is_confirmed ?? session.isConfirmed ?? false;
+  const deadline = session.confirmation_deadline ?? session.confirmationDeadline ?? null;
 
   if (isCancelled && cancelledReason === 'deadline_expired') return 'expired';
   if (isCancelled) return 'cancelled';
   if (completedAt) return 'completed';
   if (isConfirmed) return 'active';
+
+  if (deadline && new Date(String(deadline)) < new Date()) return 'expired';
   return 'draft';
 }
 
@@ -88,10 +93,18 @@ export function canRequestToJoin(session: {
   currentParticipants?: number;
   max_participants?: number;
   maxParticipants?: number;
+  confirmation_deadline?: string | Date | null;
+  confirmationDeadline?: string | Date | null;
+  is_confirmed?: boolean | null;
+  isConfirmed?: boolean | null;
 }): boolean {
   const isCancelled = session.is_cancelled ?? session.isCancelled ?? false;
   const current = session.current_participants ?? session.currentParticipants ?? 0;
   const max = session.max_participants ?? session.maxParticipants ?? 0;
+  const deadline = session.confirmation_deadline ?? session.confirmationDeadline ?? null;
+  const isConfirmed = session.is_confirmed ?? session.isConfirmed ?? false;
+
+  if (!isConfirmed && deadline && new Date(String(deadline)) < new Date()) return false;
 
   return session.visibility === 'public' && !isCancelled && current < max;
 }

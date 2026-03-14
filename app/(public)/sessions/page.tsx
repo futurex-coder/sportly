@@ -9,6 +9,9 @@ export default async function SessionsPage() {
   const supabase = await createClient();
   const user = await getCurrentUser();
 
+  const now = new Date().toISOString();
+  const today = now.slice(0, 10);
+
   const { data: sessions } = await supabase
     .from('group_sessions')
     .select(
@@ -16,13 +19,15 @@ export default async function SessionsPage() {
        max_participants, current_participants, price_per_person_eur,
        skill_level_min, skill_level_max,
        is_confirmed, is_cancelled, cancelled_reason, completed_at,
+       confirmation_deadline,
        organizer_id, profiles!group_sessions_organizer_id_fkey(full_name, avatar_url),
        sport_categories(id, name, slug, icon, color_primary),
        fields!inner(name, locations!inner(name, city, clubs!inner(name, slug)))`
     )
     .eq('visibility', 'public')
     .eq('is_cancelled', false)
-    .gte('date', new Date().toISOString().slice(0, 10))
+    .gte('date', today)
+    .or(`is_confirmed.eq.true,confirmation_deadline.is.null,confirmation_deadline.gt.${now}`)
     .order('date')
     .order('start_time')
     .limit(100);

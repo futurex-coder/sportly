@@ -358,7 +358,7 @@ Use this in the session creation wizard step 3 instead of a custom slot picker.
 
 ---
 
-### 3.1 — Stale Bookings Never Auto-Complete
+### 3.1 — Stale Bookings Never Auto-Complete - DONE
 
 **ID:** DB-1 · **Severity:** Critical · 🗄️ SQL + 🖥️ CODE
 
@@ -426,7 +426,7 @@ Add CRON_SECRET to .env.local and Vercel environment variables.
 
 ---
 
-### 3.2 — Booking Overlap Index Too Narrow
+### 3.2 — Booking Overlap Index Too Narrow - DONE
 
 **ID:** C · **Severity:** High · 🗄️ SQL
 
@@ -479,7 +479,7 @@ Fix in the session creation wizard slot picker:
 
 ---
 
-### 3.4 — No Time Order Validation
+### 3.4 — No Time Order Validation - DONE
 
 **ID:** P · **Severity:** Medium · 🗄️ SQL
 
@@ -529,40 +529,22 @@ to:
 
 ---
 
-### 4.1 — Session Auto-Cancellation Not Working
+### 4.1 — Session Auto-Cancellation: Expire on Read (No Cron) - DONE
+**ID:** 11 · **Severity:** High · 🖥️ CODE (no SQL needed)
 
-**ID:** 11 · **Severity:** High · 🗄️ SQL + 🖥️ CODE
+Sessions past their confirmation deadline should be instantly treated as expired — 
+no 15-minute cron lag. Use "check on read" pattern instead.
 
-🗄️ **Run in Supabase SQL Editor (ensure cron job is scheduled):**
+No pg_cron job needed. No Vercel Cron route needed. No CRON_SECRET needed for this feature.
 
-```sql
-DO $$ BEGIN
-  PERFORM cron.unschedule('auto-cancel-expired-sessions');
-EXCEPTION WHEN OTHERS THEN NULL;
-END $$;
+The auto_cancel_expired_sessions() function stays in the DB as a manual cleanup tool
+but is NOT scheduled.
 
-SELECT cron.schedule(
-  'auto-cancel-expired-sessions',
-  '*/15 * * * *',
-  $$ SELECT auto_cancel_expired_sessions(); $$
-);
-```
-
-🖥️ **Cursor prompt (Vercel Cron fallback):**
-
-```
-Create Vercel Cron fallback at app/api/cron/auto-cancel/route.ts:
-- Verify Bearer CRON_SECRET from Authorization header
-- Call supabaseAdmin.rpc('auto_cancel_expired_sessions')
-- Return { success: true, cancelled: count }
-
-Ensure vercel.json already has:
-{ "path": "/api/cron/auto-cancel", "schedule": "*/15 * * * *" }
-```
+pg_cron is only used for auto-complete-past-bookings (Wave 3.1).
 
 ---
 
-### 4.2 — Rankings Show "2 ratings from 0 sessions"
+### 4.2 — Rankings Show "2 ratings from 0 sessions" - DONE
 
 **ID:** 13 · **Severity:** Medium · 🗄️ SQL + 🖥️ CODE
 

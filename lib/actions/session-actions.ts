@@ -23,6 +23,34 @@ function revalidateSessionPaths(sessionId: string) {
   revalidatePath('/dashboard/group-sessions');
 }
 
+// ─── Lazy-write expiry: cancel expired drafts on read ──
+
+export async function expireSessionIfNeeded(session: {
+  id: string;
+  is_cancelled: boolean;
+  is_confirmed: boolean;
+  confirmation_deadline: string | null;
+}): Promise<boolean> {
+  if (
+    !session.is_cancelled &&
+    !session.is_confirmed &&
+    session.confirmation_deadline &&
+    new Date(session.confirmation_deadline) < new Date()
+  ) {
+    const supabase = await createClient();
+    await supabase
+      .from('group_sessions')
+      .update({
+        is_cancelled: true,
+        cancelled_reason: 'deadline_expired',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', session.id);
+    return true;
+  }
+  return false;
+}
+
 // ─── Create Group Session (DRAFT — no booking) ──────
 
 export async function createGroupSession(data: {
@@ -125,7 +153,7 @@ export async function confirmGroupSession(
       .from('group_sessions')
       .select(
         'id, organizer_id, field_id, date, start_time, end_time, ' +
-        'is_confirmed, is_cancelled, price_per_person_eur, title'
+        'is_confirmed, is_cancelled, confirmation_deadline, price_per_person_eur, title'
       )
       .eq('id', sessionId)
       .single();
@@ -136,6 +164,16 @@ export async function confirmGroupSession(
     }
     if (session.is_confirmed) return { success: false, error: 'Session is already confirmed' };
     if (session.is_cancelled) return { success: false, error: 'Session is cancelled' };
+
+    const wasExpired = await expireSessionIfNeeded({
+      id: session.id,
+      is_cancelled: session.is_cancelled ?? false,
+      is_confirmed: session.is_confirmed ?? false,
+      confirmation_deadline: session.confirmation_deadline,
+    });
+    if (wasExpired) {
+      return { success: false, error: 'Session deadline has passed — it has been expired.' };
+    }
 
     const info = await getFieldBookingInfo(session.field_id);
     const priceEur = info?.pricePerSlotEur ?? 0;
@@ -253,13 +291,24 @@ export async function requestToJoinSession(
       .from('group_sessions')
       .select(
         'id, visibility, max_participants, current_participants, ' +
-        'is_cancelled, skill_level_min, skill_level_max, sport_category_id'
+        'is_cancelled, is_confirmed, confirmation_deadline, skill_level_min, skill_level_max, sport_category_id'
       )
       .eq('id', sessionId)
       .single();
 
     if (!session) return { success: false, error: 'Session not found' };
     if (session.is_cancelled) return { success: false, error: 'Session is cancelled' };
+
+    const wasExpired = await expireSessionIfNeeded({
+      id: session.id,
+      is_cancelled: session.is_cancelled ?? false,
+      is_confirmed: session.is_confirmed ?? false,
+      confirmation_deadline: session.confirmation_deadline,
+    });
+    if (wasExpired) {
+      return { success: false, error: 'Session deadline has passed — it has been expired.' };
+    }
+
     if (session.visibility !== 'public') {
       return { success: false, error: 'This is a private session. You can only join via invite.' };
     }

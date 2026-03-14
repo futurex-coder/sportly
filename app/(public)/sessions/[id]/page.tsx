@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { getCurrentUser } from '@/lib/auth/helpers';
 import { notFound } from 'next/navigation';
+import { expireSessionIfNeeded } from '@/lib/actions/session-actions';
 import SessionDetailClient from './session-detail-client';
 
 export default async function SessionDetailPage({
@@ -28,6 +29,13 @@ export default async function SessionDetailPage({
     .single();
 
   if (!session) notFound();
+
+  await expireSessionIfNeeded({
+    id: session.id,
+    is_cancelled: session.is_cancelled ?? false,
+    is_confirmed: session.is_confirmed ?? false,
+    confirmation_deadline: session.confirmation_deadline,
+  });
 
   // Fetch participants with their profiles
   const { data: participants } = await supabase
