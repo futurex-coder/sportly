@@ -314,7 +314,7 @@ In the DailyScheduleGrid component:
 
 ---
 
-### 2.4 — Landing Page Reservations Count Shows 0 When Logged Out
+### 2.4 — Landing Page Reservations Count Shows 0 When Logged Out - DONE
 
 **ID:** 3 · **Severity:** Medium · 🖥️ CODE
 
@@ -334,7 +334,7 @@ In the landing page server component (app/(public)/page.tsx):
 
 ---
 
-### 2.5 — Slot Grid Component Not Reused
+### 2.5 — Slot Grid Component Not Reused - Will do later
 
 **ID:** 9 · **Severity:** Low · 🖥️ CODE
 

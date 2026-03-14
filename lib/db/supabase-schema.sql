@@ -189,10 +189,17 @@ CREATE TABLE bookings (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Prevent double bookings
-CREATE UNIQUE INDEX idx_bookings_no_overlap
-  ON bookings (field_id, date, start_time)
-  WHERE status NOT IN ('cancelled');
+-- Prevent overlapping bookings (requires btree_gist extension)
+CREATE EXTENSION IF NOT EXISTS btree_gist;
+ALTER TABLE bookings ADD CONSTRAINT bookings_no_overlap
+  EXCLUDE USING gist (
+    field_id WITH =,
+    date WITH =,
+    tsrange(
+      ('2000-01-01'::date + start_time)::timestamp,
+      ('2000-01-01'::date + end_time)::timestamp
+    ) WITH &&
+  ) WHERE (status != 'cancelled');
 
 -- 4.13 group_sessions
 CREATE TABLE group_sessions (
@@ -1031,7 +1038,7 @@ INSERT INTO rating_criteria (name, description, weight, sort_order) VALUES
 -- Prevents race conditions via row-level locking on the field row,
 -- then checks for overlapping non-cancelled bookings using time range
 -- overlap (start_time < p_end_time AND end_time > p_start_time).
--- The unique partial index idx_bookings_no_overlap is the final safety net.
+-- The bookings_no_overlap GiST exclusion constraint is the final safety net.
 -- Always inserts with status = 'confirmed'.
 -- ═══════════════════════════════════════════════════════
 

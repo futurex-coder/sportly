@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { getCurrentUser } from '@/lib/auth/helpers';
 import { createClient } from '@/lib/supabase/server';
+import { supabaseAdmin } from '@/lib/supabase/admin';
 import { getFieldBookingInfo } from '@/lib/booking/slot-generator';
 import { insertBookingSafe } from './booking-actions';
 import { computeConfirmationDeadline } from '@/lib/db/queries';
@@ -50,6 +51,21 @@ export async function createGroupSession(data: {
       .eq('id', data.fieldId)
       .single();
     if (!field) return { success: false, error: 'Field not found' };
+
+    // Reject if a non-cancelled booking already occupies this slot
+    const { data: overlapping } = await supabaseAdmin
+      .from('bookings')
+      .select('id')
+      .eq('field_id', data.fieldId)
+      .eq('date', data.date)
+      .lt('start_time', data.endTime)
+      .gt('end_time', data.startTime)
+      .neq('status', 'cancelled')
+      .limit(1);
+
+    if (overlapping && overlapping.length > 0) {
+      return { success: false, error: 'SLOT_ALREADY_BOOKED' };
+    }
 
     const deadline = computeConfirmationDeadline(data.date, data.startTime);
 
