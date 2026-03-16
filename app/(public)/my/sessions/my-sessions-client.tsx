@@ -1,6 +1,6 @@
 'use client';
 
-import { useTransition } from 'react';
+import { useMemo, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
@@ -10,6 +10,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import SessionCard, { type SessionCardData } from '@/components/sessions/session-card';
 import { getParticipantStatusDisplay, type ParticipantStatus } from '@/lib/db/queries';
 import { acceptDirectInvite, declineDirectInvite } from '@/lib/actions/session-actions';
+import { useSessionListRealtime } from '@/lib/supabase/use-session-realtime';
 import { toast } from 'sonner';
 
 interface SessionWithLifecycle extends SessionCardData {
@@ -43,6 +44,12 @@ export default function MySessionsClient({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const fullyRatedSet = new Set(fullyRatedSessionIds);
+
+  const sessionIds = useMemo(
+    () => [...new Set(participations.map((p) => (p.group_sessions as any)?.id).filter(Boolean))],
+    [participations]
+  );
+  useSessionListRealtime(sessionIds);
 
   function isExpiredDraft(s: SessionWithLifecycle): boolean {
     return (

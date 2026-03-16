@@ -44,6 +44,7 @@ import { toast } from 'sonner';
 import ParticipantList, { type ParticipantData } from '@/components/sessions/participant-list';
 import InviteModal, { type InviteData } from '@/components/sessions/invite-modal';
 import RatePlayersForm from '@/components/ratings/rate-players-form';
+import { useSessionDetailRealtime } from '@/lib/supabase/use-session-realtime';
 
 interface Session {
   id: string;
@@ -114,6 +115,8 @@ export default function SessionDetailClient({
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
+
+  useSessionDetailRealtime(session.id);
 
   const sc = session.sport_categories;
   const field = session.fields;
