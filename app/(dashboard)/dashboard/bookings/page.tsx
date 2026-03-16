@@ -4,6 +4,19 @@ import { getActiveClubId, getActiveLocationId } from '@/lib/auth/impersonation';
 import { createClient } from '@/lib/supabase/server';
 import BookingsClient from './bookings-client';
 
+interface FieldRow {
+  id: string;
+  name: string;
+  location_id: string;
+  sport_category_id: string | null;
+  locations: { name: string } | null;
+}
+
+interface MemberRow {
+  user_id: string;
+  profiles: { id: string; full_name: string | null; email: string } | null;
+}
+
 export default async function BookingsPage() {
   await requireAuth();
   const clubId = await getActiveClubId();
@@ -38,7 +51,8 @@ export default async function BookingsPage() {
     .select('id, name, location_id, sport_category_id, locations(name)')
     .in('location_id', locationIds)
     .eq('is_active', true)
-    .order('name');
+    .order('name')
+    .returns<FieldRow[]>();
 
   const fieldIds = fields?.map((f) => f.id) ?? [];
 
@@ -61,16 +75,17 @@ export default async function BookingsPage() {
     .from('club_members')
     .select('user_id, profiles(id, full_name, email)')
     .eq('club_id', clubId)
-    .eq('is_active', true);
+    .eq('is_active', true)
+    .returns<MemberRow[]>();
 
   const members = (clubMembers ?? [])
     .map((m) => m.profiles)
-    .filter(Boolean) as { id: string; full_name: string | null; email: string }[];
+    .filter((p): p is NonNullable<typeof p> => !!p);
 
   const fieldMap = Object.fromEntries(
     (fields ?? []).map((f) => [
       f.id,
-      { name: f.name, locationName: (f.locations as any)?.name ?? '', locationId: f.location_id },
+      { name: f.name, locationName: f.locations?.name ?? '', locationId: f.location_id },
     ])
   );
 

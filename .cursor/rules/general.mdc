@@ -16,3 +16,5 @@ Queries - lib\db\queries.ts
 Always ask questions if not sure about something.
 
 Always check supabase if there are thing that does not align and ask questiion if there is need of chagne of DB.
+
+Always apply proper Typescript and never use any.

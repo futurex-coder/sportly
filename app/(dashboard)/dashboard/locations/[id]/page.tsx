@@ -4,6 +4,16 @@ import { requireClubAccess } from '@/lib/auth/helpers';
 import { createClient } from '@/lib/supabase/server';
 import LocationDetailClient from './location-detail-client';
 
+interface FieldRow {
+  id: string;
+  name: string;
+  slug: string;
+  sport_category_id: string | null;
+  is_active: boolean | null;
+  sort_order: number | null;
+  sport_categories: { name: string; icon: string | null } | null;
+}
+
 export default async function LocationDetailPage({
   params,
 }: {
@@ -35,7 +45,8 @@ export default async function LocationDetailPage({
     .from('fields')
     .select('id, name, slug, sport_category_id, is_active, sort_order, sport_categories(name, icon)')
     .eq('location_id', locationId)
-    .order('sort_order');
+    .order('sort_order')
+    .returns<FieldRow[]>();
 
   return (
     <LocationDetailClient

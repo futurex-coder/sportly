@@ -4,6 +4,11 @@ import { getCurrentUser } from '@/lib/auth/helpers';
 import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
 import SessionListClient from './session-list-client';
+import type { SessionCardData } from '@/components/sessions/session-card';
+
+interface SessionRow extends SessionCardData {
+  confirmation_deadline: string | null;
+}
 
 export default async function SessionsPage() {
   const supabase = await createClient();
@@ -30,7 +35,8 @@ export default async function SessionsPage() {
     .or(`is_confirmed.eq.true,confirmation_deadline.is.null,confirmation_deadline.gt.${now}`)
     .order('date')
     .order('start_time')
-    .limit(100);
+    .limit(100)
+    .returns<SessionRow[]>();
 
   const { data: categories } = await supabase
     .from('sport_categories')

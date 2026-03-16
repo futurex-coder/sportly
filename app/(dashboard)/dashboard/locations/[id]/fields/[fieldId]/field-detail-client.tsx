@@ -495,7 +495,7 @@ export default function FieldDetailClient({
           ))}
           <Button variant="outline" size="sm" onClick={() => setAvailRules([
             ...availRules,
-            { dayOfWeek: 'monday', startTime: '08:00', endTime: '22:00', isAvailable: true },
+            { dayOfWeek: 'monday', specificDate: undefined, startTime: '08:00', endTime: '22:00', isAvailable: true, reason: undefined },
           ])}>
             <Plus className="mr-2 size-4" /> Add Override
           </Button>

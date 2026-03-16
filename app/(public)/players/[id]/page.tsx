@@ -2,6 +2,27 @@ import { createClient } from '@/lib/supabase/server';
 import { notFound } from 'next/navigation';
 import PlayerProfileClient from './player-profile-client';
 
+interface RankingRow {
+  id: string;
+  rating: number;
+  total_ratings_received: number;
+  total_sessions_played: number;
+  sport_category_id: string;
+  sport_categories: { id: string; name: string; slug: string; icon: string | null; color_primary: string | null };
+}
+
+interface RecentRatingRow {
+  id: string;
+  rating: number;
+  skill_rating: number | null;
+  sportsmanship_rating: number | null;
+  comment: string | null;
+  created_at: string;
+  profiles: { full_name: string | null; avatar_url: string | null } | null;
+  group_sessions: { title: string; date: string } | null;
+  sport_categories: { name: string; icon: string | null } | null;
+}
+
 export default async function PlayerProfilePage({
   params,
 }: {
@@ -24,7 +45,8 @@ export default async function PlayerProfilePage({
     .from('user_sport_rankings')
     .select('id, rating, total_ratings_received, total_sessions_played, sport_category_id, sport_categories(id, name, slug, icon, color_primary)')
     .eq('user_id', id)
-    .order('rating', { ascending: false });
+    .order('rating', { ascending: false })
+    .returns<RankingRow[]>();
 
   // Per-criteria breakdowns
   const sportIds = (rankings ?? []).map((r) => r.sport_category_id);
@@ -94,7 +116,8 @@ export default async function PlayerProfilePage({
     )
     .eq('rated_id', id)
     .order('created_at', { ascending: false })
-    .limit(10);
+    .limit(10)
+    .returns<RecentRatingRow[]>();
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-8">

@@ -4,6 +4,21 @@ import { getActiveClubId } from '@/lib/auth/impersonation';
 import { createClient } from '@/lib/supabase/server';
 import TeamClient from './team-client';
 
+interface MemberRow {
+  id: string;
+  user_id: string;
+  role: string;
+  is_active: boolean | null;
+  created_at: string;
+  profiles: {
+    id: string;
+    full_name: string | null;
+    email: string;
+    avatar_url: string | null;
+    phone: string | null;
+  } | null;
+}
+
 export default async function TeamPage() {
   const currentUser = await requireAuth();
   const clubId = await getActiveClubId();
@@ -15,7 +30,8 @@ export default async function TeamPage() {
     .from('club_members')
     .select('id, user_id, role, is_active, created_at, profiles(id, full_name, email, avatar_url, phone)')
     .eq('club_id', clubId)
-    .order('created_at');
+    .order('created_at')
+    .returns<MemberRow[]>();
 
   const { data: club } = await supabase
     .from('clubs')

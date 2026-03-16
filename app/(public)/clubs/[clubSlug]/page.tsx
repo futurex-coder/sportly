@@ -2,6 +2,13 @@ import { notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import ClubDetailClient from './club-detail-client';
 
+interface TrainerRow {
+  id: string;
+  user_id: string;
+  role: string;
+  profiles: { id: string; full_name: string | null; avatar_url: string | null; phone: string | null; city: string | null } | null;
+}
+
 export default async function ClubDetailPage({
   params,
 }: {
@@ -80,7 +87,8 @@ export default async function ClubDetailPage({
     .select('id, user_id, role, profiles(id, full_name, avatar_url, phone, city)')
     .eq('club_id', club.id)
     .eq('role', 'trainer')
-    .eq('is_active', true);
+    .eq('is_active', true)
+    .returns<TrainerRow[]>();
 
   return (
     <ClubDetailClient

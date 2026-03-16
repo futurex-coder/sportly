@@ -2,6 +2,30 @@ import { requireAuth } from '@/lib/auth/helpers';
 import { createClient } from '@/lib/supabase/server';
 import MySessionsClient from './my-sessions-client';
 
+interface ParticipationRow {
+  id: string;
+  status: string;
+  session_id: string;
+  group_sessions: {
+    id: string;
+    title: string;
+    date: string;
+    start_time: string;
+    end_time: string;
+    organizer_id: string | null;
+    visibility: string;
+    max_participants: number;
+    current_participants: number;
+    is_confirmed: boolean | null;
+    is_cancelled: boolean | null;
+    cancelled_reason: string | null;
+    completed_at: string | null;
+    confirmation_deadline: string | null;
+    fields: { name: string; locations: { name: string; city: string; clubs: { name: string; slug: string } } };
+    sport_categories: { name: string; icon: string | null } | null;
+  };
+}
+
 export default async function MySessionsPage() {
   const user = await requireAuth();
   const supabase = await createClient();
@@ -20,7 +44,8 @@ export default async function MySessionsPage() {
     )
     .eq('user_id', user.id)
     .order('joined_at', { ascending: false })
-    .limit(100);
+    .limit(100)
+    .returns<ParticipationRow[]>();
 
   // For completed past sessions, check which ones have ALL participants rated
   const completedPastSessionIds = (participations ?? [])

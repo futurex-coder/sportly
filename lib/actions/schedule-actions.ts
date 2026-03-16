@@ -74,7 +74,9 @@ export async function getScheduleForDate(
         getFieldBookingInfo(f.id),
       ]);
 
-      const sc = f.sport_categories as { id: string; name: string; icon: string | null } | null;
+      const scRaw = f.sport_categories;
+      const sc: { id: string; name: string; icon: string | null } | null =
+        Array.isArray(scRaw) ? scRaw[0] ?? null : scRaw ?? null;
 
       return {
         field: {

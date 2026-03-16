@@ -3,6 +3,7 @@ import { getCurrentUser } from '@/lib/auth/helpers';
 import { notFound } from 'next/navigation';
 import { expireSessionIfNeeded } from '@/lib/actions/session-actions';
 import SessionDetailClient from './session-detail-client';
+import type { ParticipantData } from '@/components/sessions/participant-list';
 
 export default async function SessionDetailPage({
   params,
@@ -48,7 +49,8 @@ export default async function SessionDetailPage({
        profiles!session_participants_user_id_fkey(full_name, avatar_url, city)`
     )
     .eq('session_id', id)
-    .order('joined_at');
+    .order('joined_at')
+    .returns<ParticipantData[]>();
 
   // Fetch invites (organizer sees all; includes who accepted)
   let invites: any[] = [];

@@ -13,6 +13,7 @@ import {
   uniqueIndex,
   index,
   check,
+  type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
 
@@ -298,7 +299,7 @@ export const bookings = pgTable(
     userId: uuid('user_id')
       .notNull()
       .references(() => profiles.id),
-    sessionId: uuid('session_id').references(() => groupSessions.id, { onDelete: 'set null' }),
+    sessionId: uuid('session_id').references((): AnyPgColumn => groupSessions.id, { onDelete: 'set null' }),
     date: date('date').notNull(),
     startTime: time('start_time').notNull(),
     endTime: time('end_time').notNull(),

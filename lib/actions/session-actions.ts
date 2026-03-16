@@ -153,8 +153,7 @@ export async function confirmGroupSession(
     const { data: session } = await supabase
       .from('group_sessions')
       .select(
-        'id, organizer_id, field_id, date, start_time, end_time, ' +
-        'is_confirmed, is_cancelled, confirmation_deadline, price_per_person_eur, title'
+        `id, organizer_id, field_id, date, start_time, end_time, is_confirmed, is_cancelled, confirmation_deadline, price_per_person_eur, title`
       )
       .eq('id', sessionId)
       .single();
@@ -291,8 +290,7 @@ export async function requestToJoinSession(
     const { data: session } = await supabase
       .from('group_sessions')
       .select(
-        'id, visibility, max_participants, current_participants, ' +
-        'is_cancelled, is_confirmed, confirmation_deadline, skill_level_min, skill_level_max, sport_category_id'
+        `id, visibility, max_participants, current_participants, is_cancelled, is_confirmed, confirmation_deadline, skill_level_min, skill_level_max, sport_category_id`
       )
       .eq('id', sessionId)
       .single();

@@ -28,7 +28,7 @@ export interface SessionCardData {
   skill_level_min?: number | null;
   skill_level_max?: number | null;
   visibility?: string;
-  organizer_id?: string;
+  organizer_id?: string | null;
   is_confirmed?: boolean | null;
   is_cancelled?: boolean | null;
   cancelled_reason?: string | null;
