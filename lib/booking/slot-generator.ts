@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
-import { supabaseAdmin } from '@/lib/supabase/admin';
+import { getReadClient } from '@/lib/supabase/admin';
 
 // ─── Types ──────────────────────────────────────────
 
@@ -42,6 +42,34 @@ export interface FieldBookingInfo {
 
 // ─── Helpers ────────────────────────────────────────
 
+const CLUB_TIMEZONE = 'Europe/Sofia';
+
+/**
+ * Returns the current date/time in the club's timezone (Europe/Sofia).
+ * Works correctly regardless of server timezone (UTC on Vercel, local in dev).
+ */
+function getBulgariaNow(): { dateStr: string; hours: number; minutes: number } {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: CLUB_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(now);
+
+  const get = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === type)?.value ?? '';
+
+  return {
+    dateStr: `${get('year')}-${get('month')}-${get('day')}`,
+    hours: parseInt(get('hour')),
+    minutes: parseInt(get('minute')),
+  };
+}
+
 function timeToMinutes(t: string): number {
   const [h, m] = t.split(':').map(Number);
   return h * 60 + m;
@@ -54,27 +82,6 @@ function minutesToTime(m: number): string {
 function getDayOfWeek(dateStr: string): string {
   const d = new Date(dateStr + 'T12:00:00');
   return ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][d.getDay()];
-}
-
-function getNowMinutes(): number {
-  const now = new Date();
-  return now.getHours() * 60 + now.getMinutes();
-}
-
-function isToday(dateStr: string): boolean {
-  const today = new Date();
-  const y = today.getFullYear();
-  const m = String(today.getMonth() + 1).padStart(2, '0');
-  const d = String(today.getDate()).padStart(2, '0');
-  return dateStr === `${y}-${m}-${d}`;
-}
-
-function todayStr(): string {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, '0');
-  const d = String(now.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
 }
 
 function addDays(dateStr: string, days: number): string {
@@ -163,25 +170,27 @@ export async function getAvailableSlots(
   fieldId: string,
   date: string
 ): Promise<TimeSlot[]> {
-  // All queries use supabaseAdmin (service role) to bypass RLS.
-  // The regular server client is subject to RLS, which means logged-out users
-  // see zero bookings and logged-in users only see their own — causing every
-  // slot to appear "available". Slot availability must reflect ALL bookings.
+  // Uses getReadClient() which prefers the service-role client (bypasses RLS)
+  // but falls back to the anon client if the service-role key is invalid.
+  const db = await getReadClient();
 
   // ── 0. Get field + location ──
-  const { data: field } = await supabaseAdmin
+  const { data: field, error: fieldError } = await db
     .from('fields')
     .select('id, location_id, is_active')
     .eq('id', fieldId)
     .single();
 
-  if (!field) return [];
+  if (!field) {
+    if (fieldError) console.error(`[getAvailableSlots] Field lookup failed for ${fieldId}:`, fieldError.message);
+    return [];
+  }
   if (!field.is_active) return [];
 
   const dayOfWeek = getDayOfWeek(date);
 
   // ── 1. Get location schedule for this weekday ──
-  const { data: locSched } = await supabaseAdmin
+  const { data: locSched } = await db
     .from('location_schedules')
     .select('open_time, close_time, is_closed')
     .eq('location_id', field.location_id)
@@ -193,7 +202,7 @@ export async function getAvailableSlots(
   const baseClose = locSched?.close_time ?? '22:00';
 
   // ── 2. Get field booking settings ──
-  const { data: settings } = await supabaseAdmin
+  const { data: settings } = await db
     .from('field_booking_settings')
     .select('*')
     .eq('field_id', fieldId)
@@ -206,19 +215,19 @@ export async function getAvailableSlots(
   const minNoticeHours = settings?.min_booking_notice_hours ?? 1;
   const maxAdvanceDays = settings?.max_booking_advance_days ?? 30;
 
-  // ── 3. Validate booking window ──
-  const today = todayStr();
+  // ── 3. Validate booking window (using club timezone) ──
+  const bgNow = getBulgariaNow();
+  const today = bgNow.dateStr;
   const maxDate = addDays(today, maxAdvanceDays);
   if (date > maxDate) return [];
   if (date < today) return [];
 
-  const isTodayDate = isToday(date);
-  const nowMin = getNowMinutes();
-  const earliestSlotMin = isTodayDate ? nowMin + minNoticeHours * 60 : 0;
+  const isTodayDate = date === today;
+  const nowMin = bgNow.hours * 60 + bgNow.minutes;
 
   // ── 4. Get field availability overrides (BEFORE location-closed check) ──
   // Query both specific-date and day-of-week overrides; include reason column.
-  const { data: fieldAvail } = await supabaseAdmin
+  const { data: fieldAvail } = await db
     .from('field_availability')
     .select('day_of_week, specific_date, start_time, end_time, is_available, reason')
     .eq('field_id', fieldId)
@@ -299,7 +308,7 @@ export async function getAvailableSlots(
   // ── 6. Fetch ALL non-cancelled bookings -> mark overlapping slots as booked ──
   // Uses .neq('status', 'cancelled') so pending, confirmed, and completed
   // bookings all block their slots.
-  const { data: existingBookings } = await supabaseAdmin
+  const { data: existingBookings } = await db
     .from('bookings')
     .select('id, start_time, end_time, status')
     .eq('field_id', fieldId)
@@ -328,10 +337,13 @@ export async function getAvailableSlots(
   }
 
   // ── 7. Mark past slots (if today) ──
+  // Only mark as 'past' when the slot start time has actually passed.
+  // min_booking_notice_hours is enforced at booking time, not display time,
+  // so users can still see upcoming slots even if they're within the notice window.
   if (isTodayDate) {
     for (const slot of slots) {
       const slotMin = timeToMinutes(slot.startTime);
-      if (slotMin < earliestSlotMin && slot.status === 'available') {
+      if (slotMin <= nowMin && slot.status === 'available') {
         slot.status = 'past';
       }
     }
@@ -339,7 +351,7 @@ export async function getAvailableSlots(
 
   // ── 8. Fetch public group sessions (active + non-expired drafts) → attach to overlapping slots ──
   const nowIso = new Date().toISOString();
-  const { data: publicSessions } = await supabaseAdmin
+  const { data: publicSessions } = await db
     .from('group_sessions')
     .select(`
       id, title, visibility, is_confirmed, date, start_time, end_time,

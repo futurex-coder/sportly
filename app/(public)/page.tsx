@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
-import { supabaseAdmin } from '@/lib/supabase/admin';
+import { getReadClient } from '@/lib/supabase/admin';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -17,6 +17,7 @@ import HeroSearch from './hero-search';
 
 export default async function LandingPage() {
   const supabase = await createClient();
+  const adminDb = await getReadClient();
 
   // ── Parallel data fetches ──
   const [
@@ -26,11 +27,11 @@ export default async function LandingPage() {
     { data: newClubs },
     { data: recentPlayers },
   ] = await Promise.all([
-    supabaseAdmin
+    adminDb
       .from('profiles')
       .select('*', { count: 'exact', head: true })
       .eq('role', 'client'),
-    supabaseAdmin
+    adminDb
       .from('bookings')
       .select('*', { count: 'exact', head: true })
       .in('status', ['confirmed', 'completed']),

@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import Link from 'next/link';
+import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -69,7 +70,7 @@ interface Field {
   id: string;
   name: string;
   location_id: string;
-  sport_categories: { id: string; name: string; icon: string | null; color_primary: string | null } | null;
+  sport_categories: { id: string; name: string; slug: string; icon: string | null; color_primary: string | null } | null;
   field_attributes: { attribute_key: string; attribute_value: string }[];
   field_booking_settings:
     | { slot_duration_minutes: number; price_per_slot_eur: number; price_per_slot_local: number | null; currency_local: string | null }
@@ -119,21 +120,124 @@ export default function ClubDetailClient({
   images,
   trainers,
 }: Props) {
-  const [activeLocationId, setActiveLocationId] = useState(locations[0]?.id ?? '');
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  // Derive unique sport categories from all fields
+  const sportCategories = useMemo(() => {
+    const map = new Map<string, { id: string; name: string; slug: string; icon: string | null }>();
+    fields.forEach((f) => {
+      const sc = f.sport_categories;
+      if (sc?.id) map.set(sc.id, { id: sc.id, name: sc.name, slug: sc.slug, icon: sc.icon });
+    });
+    return Array.from(map.values());
+  }, [fields]);
+
+  // Read URL params for initial state
+  const sportParam = searchParams.get('sport');
+  const locationParam = searchParams.get('location');
+
+  const initialSportId = useMemo(() => {
+    if (sportParam) {
+      const match = sportCategories.find((sc) => sc.slug === sportParam || sc.id === sportParam);
+      if (match) return match.id;
+    }
+    return 'all';
+  }, [sportParam, sportCategories]);
+
+  const [activeSportId, setActiveSportId] = useState(initialSportId);
   const [activeTab, setActiveTab] = useState('schedule');
 
-  const loc = locations.find((l) => l.id === activeLocationId) ?? locations[0];
+  // Locations that have at least one field for the selected sport
+  const filteredLocations = useMemo(() => {
+    if (activeSportId === 'all') return locations;
+    const locIdsWithSport = new Set(
+      fields.filter((f) => f.sport_categories?.id === activeSportId).map((f) => f.location_id)
+    );
+    return locations.filter((l) => locIdsWithSport.has(l.id));
+  }, [locations, fields, activeSportId]);
+
+  const initialLocationId = useMemo(() => {
+    if (locationParam) {
+      const match = filteredLocations.find((l) => l.slug === locationParam || l.id === locationParam);
+      if (match) return match.id;
+    }
+    return filteredLocations[0]?.id ?? '';
+  }, [locationParam, filteredLocations]);
+
+  const [activeLocationId, setActiveLocationId] = useState(initialLocationId);
+
+  // Sync URL params when sport or location changes
+  const syncParams = useCallback(
+    (sportId: string, locId: string) => {
+      const params = new URLSearchParams(searchParams.toString());
+      const sport = sportCategories.find((sc) => sc.id === sportId);
+      const loc = locations.find((l) => l.id === locId);
+      if (sportId !== 'all' && sport) {
+        params.set('sport', sport.slug);
+      } else {
+        params.delete('sport');
+      }
+      if (loc) {
+        params.set('location', loc.slug);
+      } else {
+        params.delete('location');
+      }
+      const qs = params.toString();
+      router.replace(`${pathname}${qs ? `?${qs}` : ''}`, { scroll: false });
+    },
+    [searchParams, sportCategories, locations, pathname, router]
+  );
+
+  function handleSportChange(sportId: string) {
+    setActiveSportId(sportId);
+    const newFiltered =
+      sportId === 'all'
+        ? locations
+        : locations.filter((l) =>
+            fields.some((f) => f.location_id === l.id && f.sport_categories?.id === sportId)
+          );
+    const newLocId = newFiltered.find((l) => l.id === activeLocationId)
+      ? activeLocationId
+      : newFiltered[0]?.id ?? '';
+    setActiveLocationId(newLocId);
+    syncParams(sportId, newLocId);
+  }
+
+  function handleLocationChange(locId: string) {
+    setActiveLocationId(locId);
+    syncParams(activeSportId, locId);
+  }
+
+  // Keep location in sync if filteredLocations changes and current selection is invalid
+  useEffect(() => {
+    if (filteredLocations.length > 0 && !filteredLocations.find((l) => l.id === activeLocationId)) {
+      const newLocId = filteredLocations[0].id;
+      setActiveLocationId(newLocId);
+      syncParams(activeSportId, newLocId);
+    }
+  }, [filteredLocations, activeLocationId, activeSportId, syncParams]);
+
+  const loc = filteredLocations.find((l) => l.id === activeLocationId) ?? filteredLocations[0];
   const locFields = useMemo(
     () => fields.filter((f) => f.location_id === activeLocationId),
     [fields, activeLocationId]
   );
+  const sportFilteredFields = useMemo(
+    () =>
+      activeSportId === 'all'
+        ? locFields
+        : locFields.filter((f) => f.sport_categories?.id === activeSportId),
+    [locFields, activeSportId]
+  );
   const locSchedule = schedules[activeLocationId] ?? [];
   const locImages = images[activeLocationId] ?? [];
 
-  // Aggregate amenities across all fields at this location
+  // Aggregate amenities across sport-filtered fields at this location
   const amenities = useMemo(() => {
     const set = new Set<string>();
-    locFields.forEach((f) => {
+    sportFilteredFields.forEach((f) => {
       (f.field_attributes ?? []).forEach((a) => {
         if (a.attribute_value === 'true' && AMENITY_MAP[a.attribute_key]) {
           set.add(a.attribute_key);
@@ -141,7 +245,7 @@ export default function ClubDetailClient({
       });
     });
     return Array.from(set);
-  }, [locFields]);
+  }, [sportFilteredFields]);
 
   // Aggregate field summary: surfaces, environments, counts
   const fieldSummary = useMemo(() => {
@@ -149,7 +253,7 @@ export default function ClubDetailClient({
     let outdoor = 0;
     let lit = 0;
     const surfaces: Record<string, number> = {};
-    locFields.forEach((f) => {
+    sportFilteredFields.forEach((f) => {
       const attrs = Object.fromEntries(
         (f.field_attributes ?? []).map((a) => [a.attribute_key, a.attribute_value])
       );
@@ -160,7 +264,7 @@ export default function ClubDetailClient({
       if (s) surfaces[s] = (surfaces[s] || 0) + 1;
     });
     return { indoor, outdoor, lit, surfaces };
-  }, [locFields]);
+  }, [sportFilteredFields]);
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6">
@@ -192,15 +296,34 @@ export default function ClubDetailClient({
         </div>
       </div>
 
-      {/* Location picker */}
-      {locations.length > 1 && (
-        <div className="mb-4">
-          <Select value={activeLocationId} onValueChange={setActiveLocationId}>
+      {/* Sport + Location pickers */}
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        {sportCategories.length > 1 && (
+          <Select value={activeSportId} onValueChange={handleSportChange}>
+            <SelectTrigger className="w-full sm:w-[200px]">
+              <SelectValue placeholder="All sports" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All sports</SelectItem>
+              {sportCategories.map((sc) => (
+                <SelectItem key={sc.id} value={sc.id}>
+                  <span className="flex items-center gap-2">
+                    {sc.icon && <span>{sc.icon}</span>}
+                    {sc.name}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+
+        {filteredLocations.length > 1 && (
+          <Select value={activeLocationId} onValueChange={handleLocationChange}>
             <SelectTrigger className="w-full sm:w-[320px]">
               <SelectValue placeholder="Select location" />
             </SelectTrigger>
             <SelectContent>
-              {locations.map((l) => (
+              {filteredLocations.map((l) => (
                 <SelectItem key={l.id} value={l.id}>
                   <div className="flex items-center gap-2">
                     <MapPin className="size-3" />
@@ -211,8 +334,8 @@ export default function ClubDetailClient({
               ))}
             </SelectContent>
           </Select>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -353,13 +476,13 @@ export default function ClubDetailClient({
                 )}
 
                 {/* Fields overview */}
-                {locFields.length > 0 && (
+                {sportFilteredFields.length > 0 && (
                   <div>
                     <h3 className="mb-2 text-sm font-semibold">
-                      Fields ({locFields.length})
+                      Fields ({sportFilteredFields.length})
                     </h3>
                     <div className="grid gap-2 sm:grid-cols-2">
-                      {locFields.map((f) => {
+                      {sportFilteredFields.map((f) => {
                         const bs = Array.isArray(f.field_booking_settings)
                           ? f.field_booking_settings[0]
                           : f.field_booking_settings;
@@ -409,9 +532,11 @@ export default function ClubDetailClient({
                 Reserve a pitch at <strong>{club.name}</strong> — {loc.name}
               </p>
               <DailyScheduleGrid
+                key={`${loc.id}-${activeSportId}`}
                 locationId={loc.id}
                 locationName={loc.name}
                 locationAddress={`${loc.city}, ${loc.address}`}
+                sportCategoryId={activeSportId !== 'all' ? activeSportId : undefined}
               />
             </div>
           ) : (
@@ -425,7 +550,7 @@ export default function ClubDetailClient({
         <TabsContent value="weekly" className="pt-6">
           <WeeklyOverview
             schedule={locSchedule}
-            fields={locFields}
+            fields={sportFilteredFields}
             onDayClick={(day) => {
               setActiveTab('schedule');
             }}

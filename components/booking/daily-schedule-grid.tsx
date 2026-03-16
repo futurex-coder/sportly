@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useTransition, useMemo, useCallback, useRef } from 'react';
-import { useRouter } from 'next/navigation';
 import { format, addDays, subDays } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import {
@@ -14,10 +13,10 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { ChevronLeft, ChevronRight, CalendarIcon, Loader2, AlertTriangle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CalendarIcon, Loader2 } from 'lucide-react';
 import SlotCell from './slot-cell';
 import BookingModal from './booking-modal';
-import { getScheduleForDate, findNextAvailableDate, type FieldSchedule } from '@/lib/actions/schedule-actions';
+import { getScheduleForDate, type FieldSchedule } from '@/lib/actions/schedule-actions';
 import { type TimeSlot } from '@/lib/booking/slot-generator';
 import { createClient } from '@/lib/supabase/client';
 
@@ -29,6 +28,7 @@ interface Props {
   locationAddress?: string;
   initialDate?: string;
   initialSchedule?: FieldSchedule[];
+  sportCategoryId?: string;
 }
 
 interface ModalState {
@@ -70,8 +70,8 @@ export default function DailyScheduleGrid({
   locationAddress,
   initialDate,
   initialSchedule,
+  sportCategoryId,
 }: Props) {
-  const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
   const today = useMemo(() => {
@@ -93,13 +93,6 @@ export default function DailyScheduleGrid({
 
   // Booking modal
   const [modalState, setModalState] = useState<ModalState | null>(null);
-
-  // Availability banner
-  const [banner, setBanner] = useState<{
-    message: string;
-    type: 'searching' | 'noAvailability';
-  } | null>(null);
-  const autoSearchDateRef = useRef<string | null>(null);
 
   // Fetch schedule for a given date
   const fetchSchedule = useCallback(
@@ -167,8 +160,6 @@ export default function DailyScheduleGrid({
     if (date < today) return;
     setSelectedDate(date);
     setMobileFieldIdx(0);
-    setBanner(null);
-    autoSearchDateRef.current = null;
     startTransition(() => fetchSchedule(date));
   }
 
@@ -182,59 +173,10 @@ export default function DailyScheduleGrid({
     changeDate(next);
   }
 
-  // ── Auto-redirect when no slots are available ──
-  useEffect(() => {
-    if (loading) return;
-    if (schedule.length === 0) {
-      setBanner(null);
-      return;
-    }
-
-    const allSlots = schedule.flatMap((fs) => fs.slots);
-    const hasAvailable = allSlots.some((s) => s.status === 'available');
-
-    if (hasAvailable) {
-      setBanner(null);
-      autoSearchDateRef.current = null;
-      return;
-    }
-
-    // Already searching from this date
-    if (autoSearchDateRef.current === selectedDate) return;
-    autoSearchDateRef.current = selectedDate;
-
-    const allClosed = allSlots.length > 0 && allSlots.every((s) => s.status === 'closed');
-    const dayName = format(new Date(selectedDate + 'T12:00:00'), 'EEEE');
-    const dateLabel = format(new Date(selectedDate + 'T12:00:00'), 'EEE, dd MMM');
-
-    setBanner({
-      type: 'searching',
-      message: allClosed
-        ? `Closed on ${dayName}. Finding next open day…`
-        : `No available slots for ${dateLabel}. Finding next available date…`,
-    });
-
-    const searchDate = selectedDate;
-    findNextAvailableDate(locationId, searchDate).then((result) => {
-      if (autoSearchDateRef.current !== searchDate) return;
-
-      if (result) {
-        autoSearchDateRef.current = null;
-        setSelectedDate(result.date);
-        setSchedule(result.schedule);
-        setBanner(null);
-      } else {
-        setBanner({
-          type: 'noAvailability',
-          message: 'No availability in the next 30 days. Contact the club directly.',
-        });
-      }
-    });
-  }, [loading, selectedDate, schedule, locationId]);
-
-  // Filter fields client-side
+  // Filter fields client-side (sport + surface/env/lighting)
   const filteredFields = useMemo(() => {
     return schedule.filter((fs) => {
+      if (sportCategoryId && fs.field.sportCategory?.id !== sportCategoryId) return false;
       const attrs = fs.field.attributes;
       if (surfaceFilter !== 'all' && attrs.surface_type !== surfaceFilter) return false;
       if (envFilter !== 'all' && attrs.environment !== envFilter) return false;
@@ -242,7 +184,7 @@ export default function DailyScheduleGrid({
       if (lightFilter === 'no' && attrs.has_lighting === 'true') return false;
       return true;
     });
-  }, [schedule, surfaceFilter, envFilter, lightFilter]);
+  }, [schedule, sportCategoryId, surfaceFilter, envFilter, lightFilter]);
 
   // Collect all unique time labels across all fields
   const timeLabels = useMemo(() => {
@@ -365,24 +307,6 @@ export default function DailyScheduleGrid({
             </Select>
           </div>
         </div>
-
-        {/* ── Availability Banner ── */}
-        {banner && (
-          <div
-            className={`flex items-center gap-3 rounded-lg border px-4 py-3 text-sm ${
-              banner.type === 'noAvailability'
-                ? 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-200'
-                : 'border-blue-200 bg-blue-50 text-blue-900 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-200'
-            }`}
-          >
-            {banner.type === 'searching' ? (
-              <Loader2 className="size-4 shrink-0 animate-spin" />
-            ) : (
-              <AlertTriangle className="size-4 shrink-0" />
-            )}
-            <span>{banner.message}</span>
-          </div>
-        )}
 
         {/* ── Mobile: field selector ── */}
         {filteredFields.length > 1 && (

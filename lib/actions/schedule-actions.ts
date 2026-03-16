@@ -1,7 +1,7 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
-import { supabaseAdmin } from '@/lib/supabase/admin';
+import { getReadClient } from '@/lib/supabase/admin';
 import {
   getAvailableSlots,
   getFieldBookingInfo,
@@ -111,7 +111,8 @@ export async function findNextAvailableDate(
   afterDate: string,
   maxDays: number = 30
 ): Promise<{ date: string; schedule: FieldSchedule[] } | null> {
-  const { data: fields } = await supabaseAdmin
+  const db = await getReadClient();
+  const { data: fields } = await db
     .from('fields')
     .select('id')
     .eq('location_id', locationId)

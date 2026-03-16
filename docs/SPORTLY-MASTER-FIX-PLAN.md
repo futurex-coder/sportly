@@ -682,7 +682,7 @@ Invited players cannot accept or reject session invitations.
 
 ---
 
-### 5.2 — Invite Link Auto-Acceptance Not Working
+### 5.2 — Invite Link Auto-Acceptance Not Working - WILL DO LATER
 
 **ID:** 10 · **Severity:** High · 🖥️ CODE
 
@@ -716,7 +716,7 @@ Remove the separate "Organizer" block from session detail. Instead:
 
 ---
 
-### 5.4 — Duplicate Records in Upcoming Sessions
+### 5.4 — Duplicate Records in Upcoming Sessions - DONE
 
 **ID:** 8 · **Severity:** Medium · 🖥️ CODE
 
