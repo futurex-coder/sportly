@@ -25,6 +25,8 @@ export interface InviteData {
   invite_code: string | null;
   status: string;
   expires_at: string | null;
+  accepted_by: string | null;
+  acceptor?: { full_name: string | null; avatar_url: string | null } | null;
 }
 
 interface InviteModalProps {
@@ -152,27 +154,43 @@ export default function InviteModal({
                 <label className="mb-2 block text-sm font-medium">
                   Sent Invites ({invites.length})
                 </label>
-                <div className="max-h-40 space-y-1.5 overflow-y-auto">
-                  {invites.map((inv) => (
-                    <div
-                      key={inv.id}
-                      className="flex items-center justify-between rounded-md border px-3 py-1.5 text-sm"
-                    >
-                      <span className="truncate">
-                        {inv.invited_email
-                          ? inv.invited_email
-                          : inv.invite_code
-                            ? 'Link invite'
-                            : 'User invite'}
-                      </span>
-                      <Badge
-                        variant={inv.status === 'accepted' ? 'default' : 'secondary'}
-                        className="ml-2 shrink-0 text-[10px]"
+                <div className="max-h-48 space-y-1.5 overflow-y-auto">
+                  {invites.map((inv) => {
+                    const label = inv.invited_email
+                      ? inv.invited_email
+                      : inv.invite_code
+                        ? 'Link invite'
+                        : 'User invite';
+
+                    const acceptorName = inv.acceptor?.full_name;
+
+                    const statusVariant =
+                      inv.status === 'accepted' ? 'default' :
+                      inv.status === 'declined' ? 'destructive' :
+                      'secondary';
+
+                    return (
+                      <div
+                        key={inv.id}
+                        className="flex items-center justify-between rounded-md border px-3 py-1.5 text-sm"
                       >
-                        {inv.status}
-                      </Badge>
-                    </div>
-                  ))}
+                        <div className="min-w-0 flex-1">
+                          <span className="block truncate">{label}</span>
+                          {(inv.status === 'accepted' || inv.status === 'declined') && acceptorName && (
+                            <span className="block truncate text-[11px] text-muted-foreground">
+                              {inv.status === 'accepted' ? 'Joined' : 'Declined'} by {acceptorName}
+                            </span>
+                          )}
+                        </div>
+                        <Badge
+                          variant={statusVariant}
+                          className="ml-2 shrink-0 text-[10px]"
+                        >
+                          {inv.status}
+                        </Badge>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </>

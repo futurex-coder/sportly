@@ -413,6 +413,7 @@ export const sessionInvites = pgTable('session_invites', {
   invitedUserId: uuid('invited_user_id').references(() => profiles.id),
   inviteCode: text('invite_code').unique(),
   status: text('status').default('pending'),
+  acceptedBy: uuid('accepted_by').references(() => profiles.id),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
   expiresAt: timestamp('expires_at', { withTimezone: true }),
 });

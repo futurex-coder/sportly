@@ -6,10 +6,13 @@ import SessionDetailClient from './session-detail-client';
 
 export default async function SessionDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ invite?: string }>;
 }) {
   const { id } = await params;
+  const { invite: inviteCode } = await searchParams;
   const supabase = await createClient();
   const user = await getCurrentUser();
 
@@ -47,12 +50,15 @@ export default async function SessionDetailPage({
     .eq('session_id', id)
     .order('joined_at');
 
-  // Fetch pending invites (organizer only)
+  // Fetch invites (organizer sees all; includes who accepted)
   let invites: any[] = [];
   if (user && session.organizer_id === user.id) {
     const { data } = await supabase
       .from('session_invites')
-      .select('id, invited_user_id, invited_email, invite_code, status, expires_at')
+      .select(
+        `id, invited_user_id, invited_email, invite_code, status, expires_at, accepted_by,
+         acceptor:profiles!session_invites_accepted_by_fkey(full_name, avatar_url)`
+      )
       .eq('session_id', id)
       .order('created_at', { ascending: false });
     invites = data ?? [];
@@ -62,6 +68,27 @@ export default async function SessionDetailPage({
   const currentParticipant = user
     ? (participants ?? []).find((p) => p.user_id === user.id)
     : null;
+
+  // Check if logged-in user has a pending email invite (not yet a participant)
+  let hasEmailInvite = false;
+  if (user && !currentParticipant) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('email')
+      .eq('id', user.id)
+      .single();
+    if (profile?.email) {
+      const { data: emailInv } = await supabase
+        .from('session_invites')
+        .select('id')
+        .eq('session_id', id)
+        .eq('invited_email', profile.email)
+        .eq('status', 'pending')
+        .limit(1)
+        .maybeSingle();
+      hasEmailInvite = !!emailInv;
+    }
+  }
 
   // Get user's sport ranking for skill check display
   let userRating: number | null = null;
@@ -134,6 +161,8 @@ export default async function SessionDetailPage({
         userRating={userRating}
         ratingStatus={ratingStatus}
         ratingCriteria={ratingCriteria}
+        inviteCode={inviteCode ?? null}
+        hasEmailInvite={hasEmailInvite}
       />
     </div>
   );

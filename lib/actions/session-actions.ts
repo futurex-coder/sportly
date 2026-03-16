@@ -457,7 +457,7 @@ export async function declineJoinRequest(
 
     const { error } = await supabase
       .from('session_participants')
-      .update({ status: 'declined' })
+      .delete()
       .eq('id', participant.id);
 
     if (error) return { success: false, error: error.message };
@@ -631,22 +631,57 @@ export async function acceptInvite(
     }
 
     const isFull = session.current_participants >= session.max_participants;
+    const newStatus = isFull ? 'waitlisted' : 'confirmed';
 
-    const { error: joinErr } = await supabase.from('session_participants').upsert(
-      {
-        session_id: invite.session_id,
-        user_id: user.id,
-        status: isFull ? 'waitlisted' : 'confirmed',
-      },
-      { onConflict: 'session_id,user_id' }
-    );
+    // Check if already a participant (use admin to bypass SELECT RLS)
+    const readDb = await getReadClient();
+    const { data: existing } = await readDb
+      .from('session_participants')
+      .select('id, status')
+      .eq('session_id', invite.session_id)
+      .eq('user_id', user.id)
+      .maybeSingle();
 
-    if (joinErr) return { success: false, error: joinErr.message };
+    if (existing) {
+      if (existing.status === 'confirmed') {
+        // Already joined — just mark invite accepted
+      } else {
+        await supabase
+          .from('session_participants')
+          .update({ status: newStatus })
+          .eq('id', existing.id);
+      }
+    } else {
+      const { error: joinErr } = await supabase
+        .from('session_participants')
+        .insert({
+          session_id: invite.session_id,
+          user_id: user.id,
+          status: newStatus,
+        });
+      if (joinErr) return { success: false, error: joinErr.message };
+    }
 
     await supabase
       .from('session_invites')
-      .update({ status: 'accepted' })
+      .update({ status: 'accepted', accepted_by: user.id })
       .eq('id', invite.id);
+
+    // Also resolve any matching email invite for the same user + session
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('email')
+      .eq('id', user.id)
+      .single();
+
+    if (profile?.email) {
+      await supabase
+        .from('session_invites')
+        .update({ status: 'accepted', accepted_by: user.id })
+        .eq('session_id', invite.session_id)
+        .eq('invited_email', profile.email)
+        .eq('status', 'pending');
+    }
 
     revalidateSessionPaths(invite.session_id);
     return { success: true, data: { sessionId: invite.session_id } };
@@ -699,7 +734,7 @@ export async function acceptDirectInvite(
 
     await supabase
       .from('session_invites')
-      .update({ status: 'accepted' })
+      .update({ status: 'accepted', accepted_by: user.id })
       .eq('session_id', sessionId)
       .eq('invited_user_id', user.id)
       .eq('status', 'pending');
@@ -746,6 +781,120 @@ export async function declineDirectInvite(
       .update({ status: 'declined' })
       .eq('session_id', sessionId)
       .eq('invited_user_id', user.id)
+      .eq('status', 'pending');
+
+    revalidateSessionPaths(sessionId);
+    return { success: true };
+  } catch (e: any) {
+    return { success: false, error: e.message ?? 'Failed to decline invite' };
+  }
+}
+
+// ─── Accept Email Invite ─────────────────────────────
+
+export async function acceptSessionEmailInvite(
+  sessionId: string
+): Promise<ActionResult> {
+  try {
+    const user = await getCurrentUser();
+    if (!user) return { success: false, error: 'Not authenticated' };
+
+    const supabase = await createClient();
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('email')
+      .eq('id', user.id)
+      .single();
+
+    if (!profile?.email) return { success: false, error: 'Could not find your profile' };
+
+    const { data: invite } = await supabase
+      .from('session_invites')
+      .select('id, session_id')
+      .eq('session_id', sessionId)
+      .eq('invited_email', profile.email)
+      .eq('status', 'pending')
+      .limit(1)
+      .single();
+
+    if (!invite) return { success: false, error: 'No pending email invite found' };
+
+    const { data: session } = await supabase
+      .from('group_sessions')
+      .select('id, max_participants, current_participants, is_cancelled')
+      .eq('id', sessionId)
+      .single();
+
+    if (!session || session.is_cancelled) {
+      return { success: false, error: 'Session is no longer available' };
+    }
+
+    const isFull = session.current_participants >= session.max_participants;
+    const newStatus = isFull ? 'waitlisted' : 'confirmed';
+
+    const readDb = await getReadClient();
+    const { data: existing } = await readDb
+      .from('session_participants')
+      .select('id, status')
+      .eq('session_id', sessionId)
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (existing) {
+      if (existing.status !== 'confirmed') {
+        await supabase
+          .from('session_participants')
+          .update({ status: newStatus })
+          .eq('id', existing.id);
+      }
+    } else {
+      const { error: joinErr } = await supabase
+        .from('session_participants')
+        .insert({
+          session_id: sessionId,
+          user_id: user.id,
+          status: newStatus,
+        });
+      if (joinErr) return { success: false, error: joinErr.message };
+    }
+
+    await supabase
+      .from('session_invites')
+      .update({ status: 'accepted', accepted_by: user.id })
+      .eq('id', invite.id);
+
+    revalidateSessionPaths(sessionId);
+    return { success: true };
+  } catch (e: any) {
+    return { success: false, error: e.message ?? 'Failed to accept invite' };
+  }
+}
+
+// ─── Decline Email Invite ────────────────────────────
+
+export async function declineSessionEmailInvite(
+  sessionId: string
+): Promise<ActionResult> {
+  try {
+    const user = await getCurrentUser();
+    if (!user) return { success: false, error: 'Not authenticated' };
+
+    const supabase = await createClient();
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('email')
+      .eq('id', user.id)
+      .single();
+
+    if (!profile?.email) return { success: false, error: 'Could not find your profile' };
+
+    await supabase
+      .from('session_invites')
+      .update({ status: 'declined', accepted_by: user.id })
+      .eq('session_id', sessionId)
+      .eq('invited_email', profile.email)
       .eq('status', 'pending');
 
     revalidateSessionPaths(sessionId);

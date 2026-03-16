@@ -34,6 +34,9 @@ import {
   markSessionComplete,
   acceptDirectInvite,
   declineDirectInvite,
+  acceptInvite,
+  acceptSessionEmailInvite,
+  declineSessionEmailInvite,
 } from '@/lib/actions/session-actions';
 import {
   getSessionStatus,
@@ -99,6 +102,8 @@ interface Props {
   userRating: number | null;
   ratingStatus?: RatingStatus | null;
   ratingCriteria?: Criteria[];
+  inviteCode?: string | null;
+  hasEmailInvite?: boolean;
 }
 
 export default function SessionDetailClient({
@@ -110,6 +115,8 @@ export default function SessionDetailClient({
   userRating,
   ratingStatus,
   ratingCriteria = [],
+  inviteCode,
+  hasEmailInvite = false,
 }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -152,6 +159,10 @@ export default function SessionDetailClient({
     !isCompleted &&
     !isPast &&
     spotsLeft > 0;
+
+  const hasInviteLink = !!inviteCode && !isCancelled && !isCompleted && !isPast;
+  const canJoinViaInvite = hasInviteLink && currentUserId && !isParticipant;
+  const canJoinViaEmail = hasEmailInvite && currentUserId && !isParticipant && !canJoinViaInvite && !isCancelled && !isCompleted && !isPast;
 
   const meetsSkill =
     userRating === null ||
@@ -235,8 +246,36 @@ export default function SessionDetailClient({
 
         {/* Actions */}
         <div className="flex flex-wrap gap-2">
-          {/* Request to Join (public sessions) */}
-          {canRequestJoin && meetsSkill && (
+          {/* Accept invite via link */}
+          {canJoinViaInvite && (
+            <Button
+              onClick={() => handleAction(
+                () => acceptInvite(inviteCode!),
+                'Invite accepted! You joined the session.'
+              )}
+              disabled={isPending}
+            >
+              {isPending ? <Loader2 className="mr-2 size-4 animate-spin" /> : <UserPlus className="mr-2 size-4" />}
+              Accept Invite
+            </Button>
+          )}
+
+          {/* Accept email invite */}
+          {canJoinViaEmail && (
+            <Button
+              onClick={() => handleAction(
+                () => acceptSessionEmailInvite(session.id),
+                'You joined the session!'
+              )}
+              disabled={isPending}
+            >
+              {isPending ? <Loader2 className="mr-2 size-4 animate-spin" /> : <UserPlus className="mr-2 size-4" />}
+              Accept Invite
+            </Button>
+          )}
+
+          {/* Request to Join (public sessions, no invite link) */}
+          {!canJoinViaInvite && !canJoinViaEmail && canRequestJoin && meetsSkill && (
             <Button
               onClick={() => handleAction(
                 () => requestToJoinSession(session.id),
@@ -248,21 +287,31 @@ export default function SessionDetailClient({
               Request to Join
             </Button>
           )}
-          {canRequestJoin && !meetsSkill && (
+          {!canJoinViaInvite && !canJoinViaEmail && canRequestJoin && !meetsSkill && (
             <Button disabled variant="outline" title={`Your rating: ${userRating?.toFixed(1)}`}>
               Skill mismatch
             </Button>
           )}
 
-          {/* Participant: Leave */}
+          {/* Participant: Cancel Request (pending) or Leave (confirmed) */}
           {isParticipant && !isOrganizer && !isCancelled && !isCompleted && !isPast && (
-            <Button
-              variant="outline"
-              onClick={() => handleAction(() => leaveSession(session.id), 'You left the session.')}
-              disabled={isPending}
-            >
-              <LogOut className="mr-2 size-4" /> Leave
-            </Button>
+            currentParticipant?.status === 'requested' ? (
+              <Button
+                variant="outline"
+                onClick={() => handleAction(() => leaveSession(session.id), 'Request cancelled.')}
+                disabled={isPending}
+              >
+                <XCircle className="mr-2 size-4" /> Cancel Request
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                onClick={() => handleAction(() => leaveSession(session.id), 'You left the session.')}
+                disabled={isPending}
+              >
+                <LogOut className="mr-2 size-4" /> Leave
+              </Button>
+            )
           )}
 
           {/* Organizer actions */}
@@ -544,14 +593,16 @@ export default function SessionDetailClient({
         </div>
       )}
 
-      {/* Not logged in prompt */}
-      {!currentUserId && !isCancelled && !isCompleted && !isPast && spotsLeft > 0 && session.visibility === 'public' && (
+      {/* Not logged in prompt — invite link takes priority over public join */}
+      {!currentUserId && !isCancelled && !isCompleted && !isPast && (hasInviteLink || (spotsLeft > 0 && session.visibility === 'public')) && (
         <div className="rounded-md border border-blue-200 bg-blue-50 p-4 text-center dark:border-blue-800 dark:bg-blue-950">
           <p className="mb-2 text-sm font-medium text-blue-700 dark:text-blue-300">
-            Want to join this session?
+            {hasInviteLink ? 'You\u2019ve been invited! Log in to join.' : 'Want to join this session?'}
           </p>
           <Button asChild>
-            <Link href={`/auth/login?redirect=/sessions/${session.id}`}>Log in to join</Link>
+            <Link href={`/auth/login?redirect=/sessions/${session.id}${inviteCode ? `?invite=${inviteCode}` : ''}`}>
+              Log in to join
+            </Link>
           </Button>
         </div>
       )}
