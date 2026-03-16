@@ -19,21 +19,56 @@ export interface ParticipantData {
 
 interface ParticipantListProps {
   participants: ParticipantData[];
-  /** The organizer's user ID — their row gets an "Organizer" badge. */
+  /** The organizer's user ID — their row gets a crown badge. */
   organizerId: string;
   /** If provided, displayed when the list is empty. */
   emptyText?: string;
+  /** Show the full participant list (true) or just a summary count (false). */
+  showFullList?: boolean;
+  /** Total max participants for the session. */
+  maxParticipants?: number;
+  /** Current participant count from the session row. */
+  currentCount?: number;
 }
 
 export default function ParticipantList({
   participants,
   organizerId,
   emptyText = 'No participants yet. Be the first to join!',
+  showFullList = true,
+  maxParticipants,
+  currentCount,
 }: ParticipantListProps) {
   const confirmed = participants.filter((p) => p.status === 'confirmed');
   const waitlisted = participants.filter((p) => p.status === 'waitlisted');
   const invited = participants.filter((p) => p.status === 'invited');
   const total = confirmed.length + waitlisted.length + invited.length;
+  const organizer = participants.find((p) => p.user_id === organizerId);
+  const displayCount = currentCount ?? total;
+  const displayMax = maxParticipants ?? total;
+
+  if (!showFullList) {
+    return (
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Players</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-3">
+            <Users className="text-muted-foreground size-5" />
+            <span className="text-sm">
+              {displayCount} / {displayMax} players
+            </span>
+          </div>
+          {organizer && (
+            <p className="text-muted-foreground mt-2 text-xs">
+              Organised by {organizer.profiles?.full_name ?? 'Unknown'}
+            </p>
+          )}
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card>
@@ -120,7 +155,9 @@ function ParticipantRow({
             {prof?.full_name ?? 'Unknown'}
           </span>
           {isOrganizer && (
-            <Badge variant="outline" className="text-[10px]">Organizer</Badge>
+            <Badge variant="outline" className="text-[10px]">
+              <span className="mr-0.5">👑</span> Organizer
+            </Badge>
           )}
         </div>
         {prof?.city && (

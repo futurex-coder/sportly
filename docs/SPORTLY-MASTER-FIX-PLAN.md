@@ -591,7 +591,7 @@ In lib/actions/session-actions.ts → leaveSession:
 
 ---
 
-### 4.4 — No Waitlist Promotion Logic
+### 4.4 — No Waitlist Promotion Logic - DONE
 
 **ID:** Gap-5 · **Severity:** Medium · 🖥️ CODE
 
@@ -637,7 +637,7 @@ Better: use date-fns-tz for proper timezone handling including DST.
 
 ---
 
-### 4.6 — No Rate Limiting on Session Creation
+### 4.6 — No Rate Limiting on Session Creation - TODO LATER
 
 **ID:** Gap-3 · **Severity:** Medium · 🖥️ CODE
 

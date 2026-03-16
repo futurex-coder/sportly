@@ -32,6 +32,8 @@ import {
   leaveSession,
   cancelSession,
   markSessionComplete,
+  acceptDirectInvite,
+  declineDirectInvite,
 } from '@/lib/actions/session-actions';
 import {
   getSessionStatus,
@@ -415,23 +417,6 @@ export default function SessionDetailClient({
         )}
       </div>
 
-      {/* Organizer card */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base">Organizer</CardTitle>
-        </CardHeader>
-        <CardContent className="flex items-center gap-3">
-          <Avatar className="size-10">
-            <AvatarImage src={org?.avatar_url ?? undefined} />
-            <AvatarFallback>{org?.full_name?.[0]?.toUpperCase() ?? '?'}</AvatarFallback>
-          </Avatar>
-          <div>
-            <p className="font-medium">{org?.full_name ?? 'Unknown'}</p>
-            {org?.city && <p className="text-muted-foreground text-xs">{org.city}</p>}
-          </div>
-        </CardContent>
-      </Card>
-
       {/* Pending join requests (organizer only) */}
       {isOrganizer && pendingRequests.length > 0 && !isCancelled && !isCompleted && (
         <Card>
@@ -488,6 +473,9 @@ export default function SessionDetailClient({
       <ParticipantList
         participants={participants}
         organizerId={session.organizer_id}
+        showFullList={isOrganizer || isParticipant}
+        maxParticipants={session.max_participants}
+        currentCount={session.current_participants}
       />
 
       {/* Rate Players */}
@@ -517,6 +505,39 @@ export default function SessionDetailClient({
           <p className="text-sm font-medium text-yellow-700 dark:text-yellow-300">
             Your join request is pending. The organizer will review it.
           </p>
+        </div>
+      )}
+
+      {/* Invited — accept or decline */}
+      {currentParticipant?.status === 'invited' && !isCancelled && !isCompleted && (
+        <div className="rounded-md border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-950">
+          <p className="mb-3 text-center text-sm font-medium text-blue-700 dark:text-blue-300">
+            You&apos;ve been invited to this session.
+          </p>
+          <div className="flex justify-center gap-2">
+            <Button
+              size="sm"
+              onClick={() => handleAction(
+                () => acceptDirectInvite(session.id),
+                'Invite accepted!'
+              )}
+              disabled={isPending}
+            >
+              {isPending ? <Loader2 className="mr-1 size-3.5 animate-spin" /> : <CheckCircle2 className="mr-1 size-3.5" />}
+              Accept
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => handleAction(
+                () => declineDirectInvite(session.id),
+                'Invite declined.'
+              )}
+              disabled={isPending}
+            >
+              <XCircle className="mr-1 size-3.5" /> Decline
+            </Button>
+          </div>
         </div>
       )}
 

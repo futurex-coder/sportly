@@ -1,11 +1,16 @@
 'use client';
 
+import { useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { Users, CalendarDays } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Users, CalendarDays, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 import { EmptyState } from '@/components/ui/empty-state';
 import SessionCard, { type SessionCardData } from '@/components/sessions/session-card';
 import { getParticipantStatusDisplay, type ParticipantStatus } from '@/lib/db/queries';
+import { acceptDirectInvite, declineDirectInvite } from '@/lib/actions/session-actions';
+import { toast } from 'sonner';
 
 interface SessionWithLifecycle extends SessionCardData {
   completed_at?: string | null;
@@ -13,6 +18,7 @@ interface SessionWithLifecycle extends SessionCardData {
   is_cancelled?: boolean | null;
   cancelled_reason?: string | null;
   confirmation_deadline?: string | null;
+  organizer_id?: string | null;
 }
 
 interface Participation {
@@ -22,7 +28,6 @@ interface Participation {
 }
 
 interface Props {
-  organized: SessionWithLifecycle[];
   participations: Participation[];
   fullyRatedSessionIds: string[];
   today: string;
@@ -30,11 +35,13 @@ interface Props {
 }
 
 export default function MySessionsClient({
-  organized,
   participations,
   fullyRatedSessionIds,
   today,
+  currentUserId,
 }: Props) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
   const fullyRatedSet = new Set(fullyRatedSessionIds);
 
   function isExpiredDraft(s: SessionWithLifecycle): boolean {
@@ -46,20 +53,30 @@ export default function MySessionsClient({
     );
   }
 
-  const upcomingOrg = organized.filter(
-    (s) => s.date >= today && !s.is_cancelled && !isExpiredDraft(s)
-  );
-  const pastOrg = organized.filter(
-    (s) => s.date < today || s.is_cancelled || isExpiredDraft(s)
-  );
+  function getRole(p: Participation): 'Organizer' | 'Participant' | 'Invited' {
+    if ((p.group_sessions as any)?.organizer_id === currentUserId) return 'Organizer';
+    if (p.status === 'invited') return 'Invited';
+    return 'Participant';
+  }
 
-  const upcomingPart = participations.filter((p) => {
+  const upcoming = participations.filter((p) => {
     const sess = p.group_sessions as SessionWithLifecycle;
-    return sess?.date >= today && p.status !== 'invited' && p.status !== 'requested' && !isExpiredDraft(sess);
+    return (
+      sess?.date >= today &&
+      !sess.is_cancelled &&
+      !isExpiredDraft(sess) &&
+      p.status !== 'invited' &&
+      p.status !== 'requested'
+    );
   });
-  const pastPart = participations.filter((p) => {
+
+  const past = participations.filter((p) => {
     const sess = p.group_sessions as SessionWithLifecycle;
-    return (sess?.date < today || isExpiredDraft(sess)) && p.status !== 'invited' && p.status !== 'requested';
+    return (
+      (sess?.date < today || sess?.is_cancelled || isExpiredDraft(sess)) &&
+      p.status !== 'invited' &&
+      p.status !== 'requested'
+    );
   });
 
   const invites = participations.filter((p) => p.status === 'invited');
@@ -69,10 +86,10 @@ export default function MySessionsClient({
     <Tabs defaultValue="upcoming">
       <TabsList className="flex-wrap">
         <TabsTrigger value="upcoming">
-          Upcoming ({upcomingOrg.length + upcomingPart.length})
+          Upcoming ({upcoming.length})
         </TabsTrigger>
         <TabsTrigger value="past">
-          Past ({pastOrg.length + pastPart.length})
+          Past ({past.length})
         </TabsTrigger>
         {requested.length > 0 && (
           <TabsTrigger value="requested">
@@ -87,7 +104,7 @@ export default function MySessionsClient({
       </TabsList>
 
       <TabsContent value="upcoming" className="space-y-3 pt-4">
-        {upcomingOrg.length + upcomingPart.length === 0 ? (
+        {upcoming.length === 0 ? (
           <EmptyState
             icon={CalendarDays}
             title="No upcoming sessions"
@@ -96,57 +113,45 @@ export default function MySessionsClient({
             actionHref="/sessions"
           />
         ) : (
-          <>
-            {upcomingOrg.map((s) => (
-              <SessionCard key={s.id} session={s} variant="dashboard" role="Organizer" />
-            ))}
-            {upcomingPart.map((p) => (
+          upcoming.map((p) => {
+            const role = getRole(p);
+            return (
               <div key={p.id} className="relative">
                 <SessionCard
                   session={p.group_sessions}
                   variant="dashboard"
-                  role="Participant"
+                  role={role}
                   participantStatus={p.status}
                 />
-                <ParticipantStatusBadge status={p.status} />
+                {role !== 'Organizer' && <ParticipantStatusBadge status={p.status} />}
               </div>
-            ))}
-          </>
+            );
+          })
         )}
       </TabsContent>
 
       <TabsContent value="past" className="space-y-3 pt-4">
-        {pastOrg.length + pastPart.length === 0 ? (
+        {past.length === 0 ? (
           <EmptyState
             icon={Users}
             title="No past sessions"
             description="Sessions you've played in will appear here."
           />
         ) : (
-          <>
-            {pastOrg.map((s) => (
+          past.map((p) => {
+            const sess = p.group_sessions;
+            const role = getRole(p);
+            return (
               <SessionCard
-                key={s.id}
-                session={s}
+                key={p.id}
+                session={sess}
                 variant="dashboard"
-                role="Organizer"
-                canRate={!!s.completed_at && !fullyRatedSet.has(s.id)}
+                role={role}
+                participantStatus={p.status}
+                canRate={!!sess?.completed_at && !fullyRatedSet.has(sess.id)}
               />
-            ))}
-            {pastPart.map((p) => {
-              const sess = p.group_sessions;
-              return (
-                <SessionCard
-                  key={p.id}
-                  session={sess}
-                  variant="dashboard"
-                  role="Participant"
-                  participantStatus={p.status}
-                  canRate={!!sess?.completed_at && !fullyRatedSet.has(sess.id)}
-                />
-              );
-            })}
-          </>
+            );
+          })
         )}
       </TabsContent>
 
@@ -171,18 +176,73 @@ export default function MySessionsClient({
 
       {invites.length > 0 && (
         <TabsContent value="invites" className="space-y-3 pt-4">
+          <p className="text-muted-foreground mb-2 text-sm">
+            You&apos;ve been invited to these sessions.
+          </p>
           {invites.map((p) => (
-            <SessionCard
+            <InviteCard
               key={p.id}
-              session={p.group_sessions}
-              variant="dashboard"
-              role="Invited"
-              participantStatus={p.status}
+              participation={p}
+              isPending={isPending}
+              onAccept={() => {
+                startTransition(async () => {
+                  const result = await acceptDirectInvite((p.group_sessions as any).id);
+                  if (result.success) {
+                    toast.success('Invite accepted!');
+                    router.refresh();
+                  } else {
+                    toast.error(result.error ?? 'Failed to accept invite');
+                  }
+                });
+              }}
+              onDecline={() => {
+                startTransition(async () => {
+                  const result = await declineDirectInvite((p.group_sessions as any).id);
+                  if (result.success) {
+                    toast.success('Invite declined.');
+                    router.refresh();
+                  } else {
+                    toast.error(result.error ?? 'Failed to decline invite');
+                  }
+                });
+              }}
             />
           ))}
         </TabsContent>
       )}
     </Tabs>
+  );
+}
+
+function InviteCard({
+  participation,
+  isPending,
+  onAccept,
+  onDecline,
+}: {
+  participation: Participation;
+  isPending: boolean;
+  onAccept: () => void;
+  onDecline: () => void;
+}) {
+  return (
+    <div className="relative">
+      <SessionCard
+        session={participation.group_sessions}
+        variant="dashboard"
+        role="Invited"
+        participantStatus={participation.status}
+      />
+      <div className="mt-2 flex gap-2 pl-14">
+        <Button size="sm" onClick={onAccept} disabled={isPending}>
+          {isPending ? <Loader2 className="mr-1 size-3.5 animate-spin" /> : <CheckCircle2 className="mr-1 size-3.5" />}
+          Accept
+        </Button>
+        <Button size="sm" variant="outline" onClick={onDecline} disabled={isPending}>
+          <XCircle className="mr-1 size-3.5" /> Decline
+        </Button>
+      </div>
+    </div>
   );
 }
 

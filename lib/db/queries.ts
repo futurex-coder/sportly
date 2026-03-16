@@ -209,11 +209,32 @@ export const PARTICIPANT_SELECT = `
 // ─── Date/Time Helpers ─────────────────────────────────────
 
 /**
+ * Returns the UTC offset string for Europe/Sofia (Bulgaria).
+ * EET = +02:00 (last Sunday of October → last Sunday of March)
+ * EEST = +03:00 (last Sunday of March → last Sunday of October)
+ */
+function bulgariaTzOffset(date: Date): string {
+  const y = date.getFullYear();
+  const lastSunday = (month: number) => {
+    const d = new Date(Date.UTC(y, month, 31));
+    d.setUTCDate(d.getUTCDate() - d.getUTCDay());
+    return d;
+  };
+  const dstStart = lastSunday(2); // last Sun of March, 03:00 local = 01:00 UTC
+  dstStart.setUTCHours(1);
+  const dstEnd = lastSunday(9); // last Sun of October, 04:00 local = 01:00 UTC
+  dstEnd.setUTCHours(1);
+  return date >= dstStart && date < dstEnd ? '+03:00' : '+02:00';
+}
+
+/**
  * Compute the confirmation deadline for a session:
- * 2 hours before start time on the session date.
+ * 2 hours before start time on the session date, in Bulgarian time.
  */
 export function computeConfirmationDeadline(date: string, startTime: string): Date {
-  const dateTime = new Date(`${date}T${startTime}`);
+  const approx = new Date(`${date}T${startTime}Z`);
+  const offset = bulgariaTzOffset(approx);
+  const dateTime = new Date(`${date}T${startTime}${offset}`);
   dateTime.setHours(dateTime.getHours() - 2);
   return dateTime;
 }

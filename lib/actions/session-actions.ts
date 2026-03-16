@@ -654,6 +654,106 @@ export async function acceptInvite(
   }
 }
 
+// ─── Accept Direct Invite (user-to-user) ────────────
+
+export async function acceptDirectInvite(
+  sessionId: string
+): Promise<ActionResult> {
+  try {
+    const user = await getCurrentUser();
+    if (!user) return { success: false, error: 'Not authenticated' };
+
+    const supabase = await createClient();
+
+    const { data: participant } = await supabase
+      .from('session_participants')
+      .select('id, status')
+      .eq('session_id', sessionId)
+      .eq('user_id', user.id)
+      .single();
+
+    if (!participant) return { success: false, error: 'You are not invited to this session' };
+    if (participant.status !== 'invited') {
+      return { success: false, error: `Cannot accept — your status is "${participant.status}"` };
+    }
+
+    const { data: session } = await supabase
+      .from('group_sessions')
+      .select('id, max_participants, current_participants, is_cancelled')
+      .eq('id', sessionId)
+      .single();
+
+    if (!session || session.is_cancelled) {
+      return { success: false, error: 'Session is no longer available' };
+    }
+
+    const isFull = session.current_participants >= session.max_participants;
+
+    const { error } = await supabase
+      .from('session_participants')
+      .update({ status: isFull ? 'waitlisted' : 'confirmed' })
+      .eq('id', participant.id);
+
+    if (error) return { success: false, error: error.message };
+
+    await supabase
+      .from('session_invites')
+      .update({ status: 'accepted' })
+      .eq('session_id', sessionId)
+      .eq('invited_user_id', user.id)
+      .eq('status', 'pending');
+
+    revalidateSessionPaths(sessionId);
+    return { success: true };
+  } catch (e: any) {
+    return { success: false, error: e.message ?? 'Failed to accept invite' };
+  }
+}
+
+// ─── Decline Direct Invite ──────────────────────────
+
+export async function declineDirectInvite(
+  sessionId: string
+): Promise<ActionResult> {
+  try {
+    const user = await getCurrentUser();
+    if (!user) return { success: false, error: 'Not authenticated' };
+
+    const supabase = await createClient();
+
+    const { data: participant } = await supabase
+      .from('session_participants')
+      .select('id, status')
+      .eq('session_id', sessionId)
+      .eq('user_id', user.id)
+      .single();
+
+    if (!participant) return { success: false, error: 'You are not invited to this session' };
+    if (participant.status !== 'invited') {
+      return { success: false, error: `Cannot decline — your status is "${participant.status}"` };
+    }
+
+    const { error } = await supabase
+      .from('session_participants')
+      .update({ status: 'declined' })
+      .eq('id', participant.id);
+
+    if (error) return { success: false, error: error.message };
+
+    await supabase
+      .from('session_invites')
+      .update({ status: 'declined' })
+      .eq('session_id', sessionId)
+      .eq('invited_user_id', user.id)
+      .eq('status', 'pending');
+
+    revalidateSessionPaths(sessionId);
+    return { success: true };
+  } catch (e: any) {
+    return { success: false, error: e.message ?? 'Failed to decline invite' };
+  }
+}
+
 // ─── Cancel Session ─────────────────────────────────
 
 export async function cancelSession(sessionId: string): Promise<ActionResult> {

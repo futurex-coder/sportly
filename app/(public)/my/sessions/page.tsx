@@ -8,20 +8,7 @@ export default async function MySessionsPage() {
 
   const today = new Date().toISOString().slice(0, 10);
 
-  // Sessions I organised
-  const { data: organized } = await supabase
-    .from('group_sessions')
-    .select(
-      `id, title, date, start_time, end_time, visibility, max_participants, current_participants,
-       is_confirmed, is_cancelled, cancelled_reason, completed_at, confirmation_deadline,
-       fields!inner(name, locations!inner(name, city, clubs!inner(name, slug))),
-       sport_categories(name, icon)`
-    )
-    .eq('organizer_id', user.id)
-    .order('date', { ascending: false })
-    .limit(50);
-
-  // Sessions I'm participating in
+  // Single query: all sessions the user participates in (organizer is always a participant)
   const { data: participations } = await supabase
     .from('session_participants')
     .select(
@@ -33,19 +20,16 @@ export default async function MySessionsPage() {
     )
     .eq('user_id', user.id)
     .order('joined_at', { ascending: false })
-    .limit(50);
+    .limit(100);
 
   // For completed past sessions, check which ones have ALL participants rated
-  const completedPastSessionIds = [
-    ...(organized ?? []).filter((s) => s.date < today && s.completed_at).map((s) => s.id),
-    ...(participations ?? [])
-      .filter((p) => {
-        const sess = p.group_sessions as any;
-        return sess?.date < today && sess?.completed_at;
-      })
-      .map((p) => (p.group_sessions as any)?.id)
-      .filter(Boolean),
-  ];
+  const completedPastSessionIds = (participations ?? [])
+    .filter((p) => {
+      const sess = p.group_sessions as any;
+      return sess?.date < today && sess?.completed_at;
+    })
+    .map((p) => (p.group_sessions as any)?.id)
+    .filter(Boolean);
   const uniqueCompletedIds = [...new Set(completedPastSessionIds)];
 
   let fullyRatedSessionIds = new Set<string>();
@@ -74,7 +58,6 @@ export default async function MySessionsPage() {
 
   return (
     <MySessionsClient
-      organized={organized ?? []}
       participations={participations ?? []}
       fullyRatedSessionIds={Array.from(fullyRatedSessionIds)}
       today={today}
